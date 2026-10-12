@@ -16,6 +16,203 @@
     .camera-shutter { animation-duration: 1ms; }
 }
 
+.website-camera { --camera-panel-height: clamp(200px, calc(100svh - 260px), 520px); padding-block: 16px; }
+.website-camera header { margin-bottom: 12px; }
+.website-camera > div:first-child { min-height: calc(100svh - 32px); display: flex; flex-direction: column; }
+.website-camera .camera-content { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-top: 16px; }
+.website-camera .camera-content > div { width: 100%; }
+.website-camera .camera-content > div > div,
+.website-camera .camera-design-preview { position: static; }
+.website-camera .camera-live-frame { width: min(100%, calc(var(--camera-panel-height) * 3 / 4)); margin-inline: auto; }
+.website-camera .camera-preview { display: block; height: auto; min-height: 0; max-height: none; }
+.website-camera .camera-design-preview { display: flex; justify-content: center; }
+.website-camera .camera-design-preview > div { width: min(100%, calc(var(--camera-panel-height) * 2 / 3)); max-width: none; }
+.website-camera .camera-design-preview.is-landscape > div { width: 100%; max-width: calc(var(--camera-panel-height) * 3 / 2); }
+@media (min-width: 768px) and (max-width: 1366px) {
+    .website-camera .camera-content { justify-content: flex-start; padding-top: 8px; }
+}
+@media (max-width: 767px), (max-width: 1024px) and (orientation: portrait) {
+    .website-camera {
+        --camera-panel-height: clamp(180px, 32svh, 400px);
+        --portrait-design-height: clamp(200px, 30svh, 360px);
+    }
+    .website-camera .camera-content { flex: none; justify-content: flex-start; padding-top: 4px; }
+    .website-camera .camera-content > .grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .website-camera .camera-content > .grid > div > p { margin-top: 10px; font-size: 16px; line-height: 1.5; }
+    .website-camera .camera-content > .grid > div > button {
+        min-height: 52px;
+        width: min(100%, 320px);
+        justify-content: center;
+        margin-top: 10px;
+        padding-block: 12px;
+        font-size: 18px;
+    }
+    .website-camera .camera-design-preview > div { width: min(100%, calc(var(--portrait-design-height) * 2 / 3)); }
+    .website-camera .camera-design-preview.is-landscape > div { width: min(100%, calc(var(--portrait-design-height) * 3 / 2)); max-width: none; }
+}
+@media screen and (orientation: landscape) {
+    .website-camera {
+        --camera-panel-height: clamp(120px, calc(100svh - 280px), 620px);
+        --landscape-design-height: clamp(120px, calc(100svh - 180px), 620px);
+    }
+    .website-camera > div:first-child { width: min(1280px, 100%); max-width: none; }
+    .website-camera .camera-content { justify-content: flex-start; padding-top: 8px; }
+    .website-camera .camera-content > .grid { max-width: none; align-items: start; }
+    .website-camera .camera-design-preview > div {
+        width: min(100%, calc(var(--landscape-design-height) * 2 / 3));
+        max-width: none;
+    }
+    .website-camera .camera-design-preview.is-landscape > div {
+        width: min(100%, calc(var(--landscape-design-height) * 3 / 2));
+        max-width: none;
+    }
+}
+@media screen and (orientation: landscape) and (min-width: 640px) {
+    .website-camera .camera-content > .grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+@media screen and (orientation: landscape) and (max-width: 639px) {
+    .website-camera .camera-content > .grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media screen {
+    .website-camera { --camera-panel-height: clamp(16rem, calc(100svh - 24rem), 40rem); }
+    .website-camera .camera-content { flex: none; justify-content: flex-start; padding-top: 4px; }
+    .website-camera .camera-content > .grid {
+        width: min(100%, calc(var(--camera-panel-height) * 3 / 4));
+        max-width: none;
+        margin-inline: auto;
+        grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr);
+        gap: 12px 16px;
+        align-items: center;
+    }
+    .website-camera .camera-content > .grid > div:not(.hidden) { display: contents; }
+    .website-camera .camera-live-frame {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        width: 100% !important;
+    }
+    .website-camera .camera-content > .grid > div > p {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.5;
+    }
+    .website-camera .camera-capture-controls {
+        grid-column: 2;
+        grid-row: 2;
+        display: flex;
+        flex-direction: column;
+        align-self: center;
+        gap: 10px;
+        min-width: 0;
+    }
+    .website-camera .camera-capture-controls > button {
+        margin: 0;
+        width: 100%;
+        min-width: 0;
+        height: 64px;
+        min-height: 64px;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 10px;
+        gap: 6px;
+        font-size: clamp(14px, 2vw, 16px);
+        line-height: 1.25;
+    }
+    .website-camera .camera-capture-controls > button svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .website-camera .camera-design-preview { grid-column: 1; grid-row: 2; align-self: center; }
+    .website-camera .camera-design-preview > div { width: min(100%, 96px); }
+    .website-camera .camera-design-preview.is-landscape > div { width: min(100%, 140px); }
+}
+
+@media screen and (min-width: 768px) and (max-width: 1024px) and (min-height: 900px) and (orientation: portrait),
+       screen and (min-width: 768px) and (max-width: 1366px) and (min-height: 600px) and (orientation: landscape) and (pointer: coarse) {
+    .website-camera .camera-content { flex: 1; justify-content: center; padding-block: 12px; }
+    .website-camera .camera-content > .grid { gap: 16px 24px; }
+    .website-camera .camera-design-preview > div { width: min(100%, 128px); }
+    .website-camera .camera-design-preview.is-landscape > div { width: min(100%, 180px); }
+    .website-camera .camera-capture-controls > button { height: 72px; min-height: 72px; font-size: 18px; }
+    .website-camera .camera-capture-controls > button svg { width: 20px; height: 20px; }
+}
+@media screen and (min-width: 768px) and (max-width: 1024px) and (min-height: 900px) and (orientation: portrait) {
+    .website-camera { --camera-panel-height: clamp(28rem, calc(100svh - 22rem), 52rem); }
+}
+@media screen and (min-width: 768px) and (max-width: 1366px) and (min-height: 600px) and (orientation: landscape) and (pointer: coarse) {
+    .website-camera { --camera-panel-height: clamp(16rem, calc(100svh - 23rem), 36rem); }
+}
+
+@media screen and (min-width: 1281px) and (orientation: landscape) and (pointer: fine) and (hover: hover) {
+    .website-camera { --camera-panel-height: clamp(20rem, calc(100svh - 18rem), 45rem); }
+    .website-camera .camera-content { flex: 1; justify-content: center; padding-block: 4px; }
+    .website-camera .camera-content > .grid {
+        width: min(100%, 72rem);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px 48px;
+        align-items: start;
+    }
+    .website-camera .camera-live-frame {
+        grid-column: 1;
+        grid-row: 1;
+        width: min(100%, calc(var(--camera-panel-height) * var(--desktop-slot-ratio))) !important;
+    }
+    .website-camera .camera-preview { aspect-ratio: var(--desktop-slot-ratio) !important; }
+    .website-camera .camera-capture-controls {
+        grid-column: 1;
+        grid-row: 2;
+        width: min(100%, 18rem);
+        margin-inline: auto;
+        align-self: start;
+    }
+    .website-camera .camera-design-preview { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+    .website-camera .camera-design-preview > div {
+        width: min(100%, calc((var(--camera-panel-height) + 4.75rem) * 2 / 3));
+        max-width: none;
+    }
+    .website-camera .camera-design-preview.is-landscape > div {
+        width: min(100%, calc((var(--camera-panel-height) + 4.75rem) * 3 / 2));
+        max-width: none;
+    }
+    .website-camera .camera-capture-controls > button {
+        height: 56px;
+        min-height: 56px;
+        padding-inline: 16px;
+        border-radius: 999px;
+        white-space: nowrap;
+        font-size: 16px;
+        gap: 8px;
+    }
+}
+
+@media screen and (max-width: 767px), screen and (pointer: coarse) and (hover: none) {
+    .website-camera .camera-content:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) {
+        flex: none;
+        justify-content: flex-start;
+        padding-top: 4px;
+    }
+    .website-camera .camera-content > .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) {
+        width: min(100%, calc(clamp(13rem, 40svh, 32rem) * 4 / 3));
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+    .website-camera .camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape']) .camera-preview { aspect-ratio: 4 / 3 !important; }
+    .website-camera .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) .camera-capture-controls {
+        grid-column: 1;
+        grid-row: 2;
+        width: min(100%, 240px);
+        justify-self: center;
+    }
+    .website-camera .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) .camera-capture-controls > button { white-space: nowrap; }
+    .website-camera .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) .camera-design-preview {
+        grid-column: 1;
+        grid-row: 3;
+        justify-self: center;
+        width: min(100%, clamp(112px, 24vw, 176px));
+    }
+    .website-camera .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) .camera-design-preview.is-landscape { width: min(100%, clamp(160px, 40vw, 280px)); }
+    .website-camera .grid:has(.camera-live-frame:is([data-camera-layout='classic'], [data-camera-layout='landscape'])) .camera-design-preview > div { width: 100%; }
+}
+
 .strip-print-only { display: none; }
 
 .printer-animation { margin: 0 auto; width: min(220px, 100%); }
@@ -49,6 +246,14 @@
 }
 .completed-strip-modal[open] { display: grid; gap: 12px; animation: strip-popup 220ms ease-out; }
 .completed-strip-modal::backdrop { background: #342b3180; }
+.website-result-modal {
+    --result-preview-height: clamp(120px, calc(100dvh - 270px), 560px);
+    width: min(720px, calc(100vw - 24px));
+}
+.website-result-modal[open] { gap: 10px; }
+.website-result-preview { margin: 4px auto; }
+.website-result-preview > div { max-width: none; }
+.website-result-modal .modal-actions { position: static; padding-block: 0; }
 @keyframes strip-popup {
     from { opacity: 0; transform: translateY(12px) scale(0.98); }
     to { opacity: 1; transform: translateY(0) scale(1); }

@@ -20,17 +20,17 @@ export function constrainDesign(item: DesignItem, width: number, height: number)
     const halfY = Math.min(height / 2, (Math.abs(Math.sin(angle)) * bounds.width + Math.abs(Math.cos(angle)) * bounds.height) / 2)
     return { ...item, size, rotation, x: Math.max(halfX, Math.min(width - halfX, item.x / 100 * width)) / width * 100, y: Math.max(halfY, Math.min(height - halfY, item.y / 100 * height)) / height * 100 }
 }
-export async function drawDesign(context: CanvasRenderingContext2D, items: DesignItem[], width: number, top: number, height = DESIGN_HEIGHT) {
+export async function drawDesign(context: CanvasRenderingContext2D, items: DesignItem[], width: number, top: number, height = DESIGN_HEIGHT, left = 60, designWidth = width - 120) {
     context.save()
     try {
-        context.beginPath(); context.rect(60, top, width - 120, height); context.clip()
+        context.beginPath(); context.rect(left, top, designWidth, height); context.clip()
         for (const raw of items) {
-            const item = constrainDesign(raw, width - 120, height), bounds = designBounds(item)
+            const item = constrainDesign(raw, designWidth, height), bounds = designBounds(item)
             let image: HTMLImageElement | undefined
             if (item.kind === 'image') { image = new Image(); image.src = item.value; await image.decode() }
             context.save()
             try {
-                context.translate(60 + (width - 120) * item.x / 100, top + height * item.y / 100)
+                context.translate(left + designWidth * item.x / 100, top + height * item.y / 100)
                 context.rotate((item.rotation ?? 0) * Math.PI / 180)
                 if (image) {
                     const scale = Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight)

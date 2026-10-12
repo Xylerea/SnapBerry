@@ -169,7 +169,7 @@ public class SnapBerryBluetoothPlugin extends Plugin {
                     close("This printer exposes a different Bluetooth protocol. Direct printing stays disabled.", true); return;
                 }
                 tx = write; ready = true;
-                confirmed = getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).getBoolean("yhk-issc-v1:" + address, false);
+                confirmed = getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).getBoolean("yhk-issc-square-v2:" + address, false);
                 if (connectionTimeout != null) main.removeCallbacks(connectionTimeout);
                 JSObject result = info(confirmed ? "Connected. Ready for direct printing." : "Services match. Print a small test to confirm your printer.");
                 PluginCall pending = connectionCall; connectionCall = null;
@@ -188,7 +188,7 @@ public class SnapBerryBluetoothPlugin extends Plugin {
     @PluginMethod public void confirmTest(PluginCall call) {
         main.post(() -> {
             if (!ready || !testSent || sending.get()) { call.reject("Print a test first and check the paper before confirming."); return; }
-            getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).edit().putBoolean("yhk-issc-v1:" + address, true).apply();
+            getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).edit().putBoolean("yhk-issc-square-v2:" + address, true).apply();
             confirmed = true;
             JSObject result = info("Printer confirmed. You can print your photo strip directly.");
             call.resolve(result); notifyListeners("printerStatus", result);
@@ -207,6 +207,11 @@ public class SnapBerryBluetoothPlugin extends Plugin {
             if (job.length < 16 || job[0] != 27 || job[1] != 64 || job[2] != 29 || job[3] != 118 || job[4] != 48
                 || job[5] != 0 || (job[6] & 255) != 48 || job[7] != 0) throw new IllegalArgumentException("Invalid YHK raster image.");
             int height = (job[8] & 255) | ((job[9] & 255) << 8);
+            boolean hasBlackPixels = false;
+            for (int i = 10; i < job.length - 6; i++) {
+                if (job[i] != 0) { hasBlackPixels = true; break; }
+            }
+            if (!hasBlackPixels) throw new IllegalArgumentException("The print bitmap is blank. Nothing was sent; please retry.");
             if (height < 1 || height > 5000 || (test && height > 128) || job.length != 16 + 48 * height
                 || !Arrays.equals(Arrays.copyOfRange(job, job.length - 6, job.length), new byte[] {27, 100, 4, 10, 10, 10})) {
                 throw new IllegalArgumentException("Invalid print dimensions or feed commands.");
@@ -215,7 +220,7 @@ public class SnapBerryBluetoothPlugin extends Plugin {
         if (test) {
             testSent = false;
             confirmed = false;
-            getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).edit().remove("yhk-issc-v1:" + address).apply();
+            getContext().getSharedPreferences("snapberry-printers", Context.MODE_PRIVATE).edit().remove("yhk-issc-square-v2:" + address).apply();
             notifyListeners("printerStatus", info("Test printing: please check the paper before confirming."));
         }
         final BluetoothGatt target = gatt;
@@ -273,3 +278,4 @@ public class SnapBerryBluetoothPlugin extends Plugin {
     @PluginMethod public void disconnect(PluginCall call) { main.post(() -> { close("Printer disconnected.", true); call.resolve(); }); }
     @Override protected void handleOnDestroy() { main.post(() -> { close("App closed", false); main.removeCallbacksAndMessages(null); }); writer.shutdownNow(); }
 }
+

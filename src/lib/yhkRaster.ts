@@ -1,7 +1,7 @@
 ﻿import { drawFleuraQr } from './fleuraQr'
 import { STRIP_LAYOUT } from './photoStrip'
 
-// Documented, physically tested YHK ISSC/ESC-POS profile; never select by name alone.
+// Driver for a publicly tested YHK variant; our device protocol still requires a physical test.
 // https://www.joshmcarthur.com/case-studies/yhk-mini-printer/
 export const YHK_WIDTH = 384
 
@@ -63,15 +63,15 @@ export async function yhkStripJob(source: string) {
     return base64(encodeYhkRaster(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.height))
 }
 
+// Known 48x48 black square, independent of canvas, fonts, and photo decoding.
 export function yhkTestJob() {
-    const canvas = document.createElement('canvas')
-    canvas.width = YHK_WIDTH; canvas.height = 96
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Unable to prepare the test image.')
-    context.fillStyle = 'white'; context.fillRect(0, 0, canvas.width, canvas.height)
-    context.fillStyle = 'black'; context.font = 'bold 28px Arial'; context.textAlign = 'center'
-    context.fillText('SnapBerry TEST', canvas.width / 2, 38)
-    context.strokeStyle = 'black'; context.lineWidth = 2; context.strokeRect(12, 52, 360, 30)
-    return base64(encodeYhkRaster(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.height))
+    const height = 64
+    const pixels = new Uint8ClampedArray(YHK_WIDTH * height * 4).fill(255)
+    for (let y = 8; y < 56; y++) {
+        for (let x = 168; x < 216; x++) {
+            const i = (y * YHK_WIDTH + x) * 4
+            pixels[i] = pixels[i + 1] = pixels[i + 2] = 0
+        }
+    }
+    return base64(encodeYhkRaster(pixels, height))
 }
-

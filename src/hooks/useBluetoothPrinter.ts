@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { BluetoothPrinter, type PairedPrinter, type PrinterInfo } from '../lib/bluetoothPrinter'
 import { isAndroidApp } from '../lib/native'
 import { yhkStripJob, yhkTestJob } from '../lib/yhkRaster'
@@ -65,7 +65,7 @@ export function useBluetoothPrinter() {
         busyRef.current = true; setBusy(true); setProgress(0); setFailed(false); setTestSent(false); setMessage('Sending a small test image…')
         try {
             await BluetoothPrinter.send({ job: yhkTestJob(), test: true })
-            if (mounted.current) { setTestSent(true); setMessage('Test data sent. Did “SnapBerry TEST” and the rectangle print clearly?') }
+            if (mounted.current) { setTestSent(true); setMessage('Test data sent. Did a solid black square print clearly?') }
         } catch (error) { report(error) }
         finally { busyRef.current = false; if (mounted.current) { setBusy(false); setProgress(null) } }
     }
@@ -95,3 +95,4 @@ export function useBluetoothPrinter() {
     return { info, devices, busy, testSent, failed, message, progress, connect, disconnect, test, confirm, print,
         status: connecting ? 'Connecting' : info.connected ? 'Connected' : failed ? 'Failed' : 'Not Connected' }
 }
+

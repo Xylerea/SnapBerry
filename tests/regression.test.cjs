@@ -40,7 +40,7 @@ function booth(permissionDenied = false) {
         './StripCustomization': { __esModule: true, default: 'Customization' },
         './SaveStripButton': { __esModule: true, default: 'SaveButton' },
         '../lib/native': { isAndroidApp: () => false },
-        '../lib/photoStrip': { PHOTO_COUNT: 4, generatePhotoStrip: async () => 'strip.png' },
+        '../lib/photoStrip': { PHOTO_COUNT: 4, generatePhotoStrip: async () => 'strip.png', generateWebsiteClassicSheet: async () => 'strip.png' },
     }, {
         navigator: { mediaDevices: { getUserMedia: async () => {
             if (permissionDenied) throw new DOMException('Denied', 'NotAllowedError')
@@ -277,4 +277,176 @@ test('rotated editor elements remain fully inside bounds and image proportions s
         assert.ok(item.y / 100 * 3810 + halfHeight <= 3810 + 1e-6)
         assert.equal(bounds.width / bounds.height, 2)
     }
+})
+
+test('Bluetooth diagnostic square contains exactly 48x48 black pixels with known row bytes', () => {
+    const raster = load('src/lib/yhkRaster.ts', { './fleuraQr': {}, './photoStrip': {} }, { Uint8Array, Uint8ClampedArray, Float32Array, btoa: value => Buffer.from(value, 'binary').toString('base64') })
+    const job = Buffer.from(raster.yhkTestJob(), 'base64')
+    assert.deepEqual([...job.subarray(0, 10)], [27, 64, 29, 118, 48, 0, 48, 0, 64, 0])
+    for (let y = 0; y < 64; y++) {
+        for (let byte = 0; byte < 48; byte++) {
+            assert.equal(job[10 + y * 48 + byte], y >= 8 && y < 56 && byte >= 21 && byte < 27 ? 255 : 0)
+        }
+    }
+    assert.deepEqual([...job.subarray(-6)], [27, 100, 4, 10, 10, 10])
+})
+
+test('postcard exports four grid photos at 1200x1800 and leaves decoration space; classic dimensions stay unchanged', async () => {
+    const canvases = [], positions = []
+    class Photo {
+        naturalWidth = 1280; naturalHeight = 720
+        set src(value) { this.onload() }
+    }
+    const context = { fillRect() {}, drawImage(...args) { positions.push(args.slice(-4)) }, measureText() { return { width: 100 } }, fillText() {} }
+    const strip = load('src/lib/photoStrip.ts', { './stripDesign': load('src/lib/stripDesign.ts', {}), './fleuraQr': { drawFleuraQr: () => 204, FLEURA_QR_CAPTION: 'QR caption' } }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'png' }; canvases.push(canvas); return canvas } } })
+    const options = { monochrome: false, frameColor: 'White', caption: '', date: '', layout: 'postcard' }
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], options)
+    assert.equal(canvases[0].width, 1200); assert.equal(canvases[0].height, 1800)
+    assert.deepEqual(positions, [[60, 60, 525, 405], [615, 60, 525, 405], [60, 495, 525, 405], [615, 495, 525, 405]])
+    const area = strip.designArea(strip.layoutForOptions(options))
+    assert.equal(area.top, 930); assert.equal(area.height, 510)
+    positions.length = 0
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], { ...options, layout: 'classic' })
+    assert.equal(canvases[1].height, 4610)
+    assert.deepEqual(positions, [[60, 60, 1080, 810], [60, 900, 1080, 810], [60, 1740, 1080, 810], [60, 2580, 1080, 810]])
+})
+
+test('background renders beneath fixed slots in partial previews and exports', async () => {
+    const draws = [], placeholders = [], canvases = []
+    class Photo {
+        naturalWidth = 1200; naturalHeight = 1800
+        set src(value) { this.source = value; this.onload() }
+    }
+    const context = { fillRect(...args) { placeholders.push(args) }, drawImage(image, ...args) { draws.push([image.source, ...args.slice(-4)]) }, measureText() { return { width: 100 } }, fillText() {} }
+    const strip = load('src/lib/photoStrip.ts', { './stripDesign': {}, './fleuraQr': { drawFleuraQr: () => 204, FLEURA_QR_CAPTION: 'QR caption' } }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'png' }; canvases.push(canvas); return canvas } } })
+    for (const layout of ['postcard', 'classic']) {
+        const options = { monochrome: false, frameColor: 'White', caption: '', date: '', layout, backgroundImage: 'background' }
+        draws.length = 0; placeholders.length = 0
+        await strip.generatePhotoStrip(['1', '2'], options, undefined, true, true)
+        const height = layout === 'postcard' ? 1800 : 4610
+        assert.equal(canvases.at(-1).height, height)
+        assert.deepEqual(draws[0], ['background', 0, 0, 1200, height])
+        assert.equal(placeholders.length, 3) // White base plus two empty photo slots.
+        const previewPositions = draws.slice(1)
+        draws.length = 0
+        await strip.generatePhotoStrip(['1', '2', '3', '4'], options)
+        assert.deepEqual(draws.slice(1, 3), previewPositions)
+        assert.equal(draws.length, 5)
+    }
+})
+
+test('landscape 4R uses three equal landscape frames in a 2x2 grid with a free design cell', async () => {
+    const draws = [], canvases = []
+    class Photo { naturalWidth = 1800; naturalHeight = 1200; set src(value) { this.source = value; this.onload() } }
+    const context = { fillRect() {}, drawImage(image, ...args) { draws.push([image.source, ...args.slice(-4)]) }, fillText() {} }
+    const strip = load('src/lib/photoStrip.ts', { './stripDesign': {}, './fleuraQr': { drawFleuraQr: () => 200, FLEURA_QR_CAPTION: 'QR' } }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'png' }; canvases.push(canvas); return canvas } } })
+    const options = { layout: 'landscape', monochrome: false, frameColor: 'White', caption: '', date: '', backgroundImage: 'background' }
+    assert.equal(strip.photoCountForOptions(options), 3)
+    await strip.generatePhotoStrip(['1', '2', '3'], options)
+    assert.equal(canvases[0].width, 1800); assert.equal(canvases[0].height, 1200)
+    assert.deepEqual(draws[0], ['background', 0, 0, 1800, 1200])
+    assert.equal(draws.length, 4)
+    const frames = draws.slice(1)
+    assert.deepEqual(frames, [['1', 60, 60, 825, 450], ['2', 915, 60, 825, 450], ['3', 60, 540, 825, 450]])
+    const area = strip.designArea(strip.LANDSCAPE_LAYOUT)
+    assert.equal(area.left, 915); assert.equal(area.top, 540)
+    assert.equal(area.width, 825); assert.equal(area.height, 450)
+    draws.length = 0
+    await strip.generatePhotoStrip(['1'], options, undefined, true, true)
+    assert.equal(canvases[1].height, 1200)
+    assert.deepEqual(draws[1], frames[0])
+    await assert.rejects(strip.generatePhotoStrip(['1', '2', '3', '4'], options))
+})
+
+test('classic export has no automatic branding or QR while other layouts retain theirs', async () => {
+    const texts = []; let qrCount = 0
+    class Photo { naturalWidth = 1200; naturalHeight = 1800; set src(value) { this.onload() } }
+    const context = { fillRect() {}, drawImage() {}, fillText(text) { texts.push(text) }, measureText() { return { width: 0 } } }
+    const strip = load('src/lib/photoStrip.ts', { './stripDesign': {}, './fleuraQr': { drawFleuraQr: () => { qrCount++; return 200 }, FLEURA_QR_CAPTION: 'QR caption' } }, { Image: Photo, document: { createElement() { return { getContext: () => context, toDataURL: () => 'png' } } } })
+    const options = { monochrome: false, frameColor: 'White', caption: '', date: '' }
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], options)
+    assert.equal(qrCount, 0); assert.deepEqual(texts, [])
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], { ...options, layout: 'postcard' })
+    assert.equal(qrCount, 1); assert.ok(texts.includes('SnapBerry')); assert.ok(texts.includes('QR caption'))
+    await strip.generatePhotoStrip(['1', '2', '3'], { ...options, layout: 'landscape' })
+    assert.equal(qrCount, 2)
+})
+
+test('website postcard matches portrait grid reference and keeps the bottom background-only', async () => {
+    const canvases = [], draws = [], texts = [], decorations = []
+    class Photo { naturalWidth = 1200; naturalHeight = 1800; set src(value) { this.source = value; this.onload() } }
+    const context = { fillRect() {}, drawImage(image, ...args) { draws.push([image.source, ...args.slice(-4)]) }, fillText(text) { texts.push(text) } }
+    const strip = load('src/lib/photoStrip.ts', {
+        './stripDesign': { drawDesign: async (...args) => decorations.push(args) },
+        './fleuraQr': { drawFleuraQr: () => assert.fail('Website postcard must not render QR') },
+    }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'png' }; canvases.push(canvas); return canvas } } })
+    const options = { layout: 'postcard', monochrome: false, frameColor: 'White', backgroundImage: 'saved-upload', caption: 'Hidden', date: 'Hidden', design: [{ id: 'saved-design' }] }
+    const layout = strip.websiteLayoutForOptions(options)
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], options, layout)
+    assert.equal(canvases[0].width, 1200); assert.equal(canvases[0].height, 1800)
+    assert.deepEqual(draws, [['saved-upload', 0, 0, 1200, 1800],
+        ['1', 60, 60, 525, 700], ['2', 615, 60, 525, 700],
+        ['3', 60, 790, 525, 700], ['4', 615, 790, 525, 700]])
+    assert.deepEqual(texts, [])
+    assert.equal(decorations[0][3] + decorations[0][4], 1490)
+    assert.equal(options.backgroundImage, 'saved-upload'); assert.equal(options.design[0].id, 'saved-design')
+    draws.length = 0; decorations.length = 0
+    await strip.generatePhotoStrip(['1', '2', '3', '4'], options, layout, true, true)
+    assert.deepEqual(draws.slice(1), [['1', 60, 60, 525, 700], ['2', 615, 60, 525, 700], ['3', 60, 790, 525, 700], ['4', 615, 790, 525, 700]])
+    // Native and other layouts retain their original geometry.
+    assert.equal(strip.layoutForOptions(options).photoHeight, 405)
+    assert.equal(strip.websiteLayoutForOptions({ ...options, layout: 'classic' }), strip.STRIP_LAYOUT)
+    assert.equal(strip.websiteLayoutForOptions({ ...options, layout: 'landscape' }), strip.WEBSITE_LANDSCAPE_LAYOUT)
+})
+
+test('website Classic uses exact physical frames and an empty bottom on two native-size copies', async () => {
+    const canvases = [], draws = [], texts = [], decorations = []
+    class Photo { naturalWidth = 1280; naturalHeight = 720; set src(value) { this.source = value; this.onload() } }
+    const context = { fillRect() {}, drawImage(...args) { draws.push(args) }, fillText(text) { texts.push(text) } }
+    const strip = load('src/lib/photoStrip.ts', {
+        './stripDesign': { drawDesign: async (...args) => decorations.push(args) },
+        './fleuraQr': { drawFleuraQr: () => assert.fail('Classic must not render QR') },
+    }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'png' }; canvases.push(canvas); return canvas } } })
+    const options = { monochrome: false, frameColor: 'White', caption: 'Hidden', date: 'Hidden', design: [{ id: 'test' }] }
+    await strip.generateWebsiteClassicSheet(['1', '2', '3', '4'], options)
+    assert.equal(canvases[0].width, 600); assert.equal(canvases[0].height, 1800)
+    assert.equal(canvases[1].width, 1200); assert.equal(canvases[1].height, 1800)
+    const cm = pixels => pixels * 2.54 / 300
+    const layout = strip.WEBSITE_CLASSIC_LAYOUT
+    assert.ok(Math.abs(cm(layout.width - 2 * layout.border) - 4.32) < 1e-9)
+    assert.ok(Math.abs(cm(layout.photoHeight) - 2.96) < 1e-9)
+    assert.ok(Math.abs(cm(layout.footerHeight) - 2.56) < 1e-9)
+    const bottom = layout.border + 4 * layout.photoHeight + 3 * layout.gap
+    assert.ok(bottom + layout.footerHeight <= 1800)
+    assert.equal(draws.length, 6)
+    for (const draw of draws.slice(0, 4)) {
+        assert.ok(Math.abs(cm(draw[7]) - 4.32) < 1e-9)
+        assert.ok(Math.abs(cm(draw[8]) - 2.96) < 1e-9)
+    }
+    assert.equal(draws[4][0], draws[5][0])
+    assert.deepEqual(draws[4].slice(1), [0, 0]); assert.deepEqual(draws[5].slice(1), [600, 0])
+    assert.deepEqual(texts, [])
+    assert.equal(decorations.length, 1)
+    assert.ok(decorations[0][3] + decorations[0][4] <= bottom)
+})
+
+test('classic 4R print sheet draws the same strip twice without distortion or recapture', async () => {
+    const draws = [], canvases = []
+    class Photo { naturalWidth = 1200; naturalHeight = 4610; set src(value) { this.source = value; this.onload() } }
+    const context = { fillRect() {}, drawImage(...args) { draws.push(args) } }
+    const strip = load('src/lib/photoStrip.ts', { './stripDesign': {}, './fleuraQr': {} }, { Image: Photo, document: { createElement() { const canvas = { getContext: () => context, toDataURL: () => 'sheet' }; canvases.push(canvas); return canvas } } })
+    assert.equal(await strip.generateClassicPrintSheet('finished-strip'), 'sheet')
+    assert.equal(canvases[0].width, 1200); assert.equal(canvases[0].height, 1800)
+    assert.equal(draws.length, 2); assert.equal(draws[0][0], draws[1][0]); assert.equal(draws[0][0].source, 'finished-strip')
+    assert.deepEqual(draws[0].slice(2), draws[1].slice(2))
+    const [, left, top, width, height] = draws[0]
+    assert.ok(Math.abs(width / height - 1200 / 4610) < 1e-9)
+    assert.ok(Math.abs(top - 30) < 1e-9); assert.ok(left >= 30)
+    assert.ok(Math.abs(draws[1][1] - left - width - 30) < 1e-9)
+    assert.ok(draws[1][1] + width <= 1170)
+    assert.ok(top + height <= 1770)
+    for (const layout of [undefined, 'classic', 'postcard']) {
+        assert.deepEqual({ ...strip.paperForLayout(layout) }, { width: 1200, height: 1800, widthInches: 4, heightInches: 6 })
+    }
+    assert.deepEqual({ ...strip.paperForLayout('landscape') }, { width: 1800, height: 1200, widthInches: 6, heightInches: 4 })
 })
