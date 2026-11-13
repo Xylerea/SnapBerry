@@ -36,6 +36,9 @@
 
 .camera-photo-slots > .is-captured { border-style: solid; border-color: #f9a8d4; }
 .camera-photo-slots img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.camera-photo-slots > .is-captured { pointer-events: auto; }
+.camera-photo-slots > .is-captured, .landscape-photo-slots > .is-captured { -webkit-touch-callout: none; user-select: none; }
+.photo-delete { position: absolute; z-index: 1; bottom: 4px; left: 50%; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 6px 10px; background: #be185d; color: white; font-size: 12px; font-weight: 600; }
 
 @keyframes camera-shutter {
     from { opacity: 0.85; }
@@ -373,6 +376,60 @@
     .landscape-capture-bottom { gap: 8px; padding-top: 16px; }
     .landscape-capture-stage { --landscape-slots-top: max(72px, calc(env(safe-area-inset-top, 0px) + 64px)); }
     .landscape-start { width: 56px; height: 56px; min-height: 56px; }
+}
+
+/* Rotation changes placement only: the video and captured images stay mounted. */
+@media screen and (max-width: 767px), screen and (pointer: coarse) {
+    .camera-booth header > button { min-width: 48px; min-height: 48px; }
+    .landscape-countdown { font-size: clamp(64px, 20vmin, 180px); }
+    .native-camera {
+        padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    .native-camera .camera-session-panel { position: static; }
+    .native-camera .camera-preview { display: block; min-height: 0; }
+    .native-camera .camera-live-frame { margin-inline: auto; }
+    .native-camera .camera-live-frame [aria-label^='Capturing in'] { font-size: clamp(48px, 16vmin, 96px); }
+}
+@media screen and (orientation: portrait) and (max-width: 767px),
+       screen and (orientation: portrait) and (pointer: coarse) {
+    .camera-booth[data-orientation='portrait'] .landscape-photo-slots {
+        inset: auto max(16px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        grid-template-columns: repeat(var(--photo-slot-count), minmax(0, 1fr));
+        gap: 8px;
+        width: min(100% - 32px, 480px);
+        margin-inline: auto;
+    }
+    .native-camera .camera-live-frame { width: min(100%, calc(52dvh * 3 / 4)); }
+    .native-camera .camera-preview { max-height: 52dvh; }
+}
+@media screen and (orientation: landscape) and (max-width: 767px),
+       screen and (orientation: landscape) and (pointer: coarse) {
+    .camera-booth[data-orientation='landscape'] .landscape-capture-bottom {
+        inset: 0 0 0 auto;
+        justify-content: center;
+        padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) 32px;
+        background: linear-gradient(90deg, transparent, #0009);
+    }
+    .landscape-photo-slots { gap: 8px; }
+    .native-camera.is-capturing header { margin-bottom: 8px; }
+    .native-camera .camera-session-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(180px, 0.7fr);
+        align-items: center;
+        gap: 8px 20px;
+        max-width: 960px;
+        margin-inline: auto;
+    }
+    .native-camera .camera-live-frame {
+        grid-column: 1;
+        grid-row: 1 / span 5;
+        width: min(100%, calc((100dvh - 128px) * 4 / 3));
+    }
+    .native-camera .camera-preview { aspect-ratio: 4 / 3; max-height: calc(100dvh - 128px); }
+    .native-camera .camera-session-panel > :not(.camera-live-frame) { grid-column: 2; margin: 0; }
+    .native-camera .camera-capture-controls { display: flex; flex-direction: column; gap: 8px; }
+    .native-camera .camera-capture-controls > button { margin: 0; justify-content: center; padding: 10px 12px; }
+    .native-camera .camera-photo-slots { max-width: 280px; }
 }
 
 .exit-session-dialog {

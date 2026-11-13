@@ -20,9 +20,30 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const exitDestinationRef = useRef<(() => void) | null>(null)
     const [showExitDialog, setShowExitDialog] = useState(false)
     const [photos, setPhotos] = useState<string[]>([])
+    const [selectedPhoto, setSelectedPhoto] = useState<number | null>(null)
+    const selectedPhotoRef = useRef<number | null>(null)
+    const pressRef = useRef<{ timer: number; pointerId: number; x: number; y: number } | null>(null)
+    const lastPointerType = useRef('mouse')
+    const photoSlotsRef = useRef<HTMLOListElement>(null)
+    function clearPress() {
+        if (pressRef.current) window.clearTimeout(pressRef.current.timer)
+        pressRef.current = null
+    }
+    function selectPhoto(index: number | null) {
+        selectedPhotoRef.current = index
+        setSelectedPhoto(index)
+    }
+    useEffect(() => {
+        function dismiss(event: PointerEvent) {
+            if (!photoSlotsRef.current?.contains(event.target as Node)) selectPhoto(null)
+        }
+        window.addEventListener('pointerdown', dismiss)
+        return () => { window.removeEventListener('pointerdown', dismiss); clearPress() }
+    }, [])
     const [countdown, setCountdown] = useState<number | null>(null)
     const [cameraReady, setCameraReady] = useState(false)
     const [cameraAttempt, setCameraAttempt] = useState(0)
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
     const [error, setError] = useState('')
     const [options, setOptions] = useState<StripOptions>({ monochrome: false, frameColor: 'White', caption: '', date: '', ...(!isAndroidApp() && initialLayout ? { layout: initialLayout } : {}), ...(!isAndroidApp() ? initialOptions : {}) })
     const photoCount = options.layout === 'landscape' && !isAndroidApp() ? 3 : 4
@@ -44,6 +65,25 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const [renderedSettings, setRenderedSettings] = useState('')
     const settingsKey = JSON.stringify(options)
     const exportReady = complete && !exporting && !!stripImage && renderedSettings === settingsKey
+
+    useEffect(() => {
+        const viewport = window.matchMedia('(orientation: landscape)')
+        const screenOrientation = window.screen?.orientation
+        // Use viewport geometry for layout (including split-screen tablets).
+        // Screen and legacy events also cover browsers that delay viewport updates.
+        const update = () => setOrientation(viewport.matches ? 'landscape' : 'portrait')
+        update()
+        viewport.addEventListener('change', update)
+        screenOrientation?.addEventListener('change', update)
+        window.addEventListener('orientationchange', update)
+        window.addEventListener('resize', update)
+        return () => {
+            viewport.removeEventListener('change', update)
+            screenOrientation?.removeEventListener('change', update)
+            window.removeEventListener('orientationchange', update)
+            window.removeEventListener('resize', update)
+        }
+    }, [])
 
     const requestExit = useCallback((navigate: () => void) => {
         if (exitDestinationRef.current) return
@@ -219,6 +259,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     function startSession() {
         if (exitDestinationRef.current || capturingRef.current || !cameraReady || error || complete) return
         prepareShutter()
+        selectPhoto(null)
         capturingRef.current = true
         setPhotos([])
         setStripImage(null)
@@ -229,6 +270,8 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     function cancelCapture() {
         if (!capturingRef.current) return
         capturingRef.current = false
+        clearPress()
+        selectPhoto(null)
         stopSounds()
         setCountdown(null)
         setPhotos([])
@@ -239,6 +282,8 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
 
     function resetSession() {
         stopSounds()
+        clearPress()
+        selectPhoto(null)
         setShowPrintPreview(false)
         capturingRef.current = false
         setCountdown(null)
@@ -283,14 +328,35 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     }
 
     const photoSlots = (countdown !== null || photos.length > 0) && <ol aria-label="Captured photos"
+        ref={photoSlotsRef}
         className={fullscreenCapture ? 'landscape-photo-slots' : 'camera-photo-slots'}
         style={{ '--photo-slot-ratio': slotRatio, '--photo-slot-count': photoCount } as CSSProperties}>
         {Array.from({ length: photoCount }, (_, index) => <li key={index}
             aria-label={`Photo ${index + 1}: ${photos[index] ? 'captured' : 'empty'}`}
-            className={photos[index] ? 'is-captured' : 'is-empty'}>
+            className={photos[index] ? 'is-captured' : 'is-empty'}
+            onContextMenu={event => { if (photos[index]) event.preventDefault() }}
+            onDoubleClick={event => { if (photos[index] && lastPointerType.current === 'mouse' && event.detail === 2) { event.preventDefault(); selectPhoto(index) } }}
+            onPointerDown={event => {
+                lastPointerType.current = event.pointerType
+                if (!(event.target as HTMLElement).closest('button')) selectPhoto(null)
+                if (!photos[index] || (event.target as HTMLElement).closest('button') || event.pointerType === 'mouse') return
+                clearPress()
+                const { pointerId, clientX: x, clientY: y } = event
+                const timer = window.setTimeout(() => { pressRef.current = null; selectPhoto(index) }, 600)
+                pressRef.current = { timer, pointerId, x, y }
+            }}
+            onPointerMove={event => { const press = pressRef.current; if (press && press.pointerId === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) clearPress() }}
+            onPointerUp={clearPress} onPointerCancel={clearPress} onPointerLeave={clearPress}>
             {photos[index] ? <img src={photos[index]} alt={`Captured photo ${index + 1}`}
-                style={{ filter: options.monochrome ? 'grayscale(1)' : undefined }} />
+                draggable={false} style={{ filter: options.monochrome ? 'grayscale(1)' : undefined }} />
                 : <span aria-hidden="true">{index + 1}</span>}
+            {photos[index] && selectedPhoto === index && <button type="button" className="photo-delete" aria-label={`Delete photo ${index + 1}`}
+                onClick={event => {
+                    event.stopPropagation()
+                    if (selectedPhotoRef.current !== index) return
+                    selectPhoto(null)
+                    setPhotos(current => current.filter((_, i) => i !== index))
+                }}>Delete</button>}
         </li>)}
     </ol>
 
@@ -306,7 +372,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     </div>
 
     return (
-        <div className={`camera-booth min-h-screen bg-[#FFF5F8] px-4 py-6 ${!isAndroidApp() ? 'website-camera' : ''} ${fullscreenCapture && !complete ? 'landscape-capture' : ''}`}>
+        <div data-orientation={orientation} className={`camera-booth min-h-screen bg-[#FFF5F8] px-4 py-6 ${!isAndroidApp() ? 'website-camera' : 'native-camera'} ${!complete ? 'is-capturing' : ''} ${fullscreenCapture && !complete ? 'landscape-capture' : ''}`}>
             <div className="mx-auto max-w-5xl">
                 <header className="mb-6 flex items-center justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -342,7 +408,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                     </div>}
                     {photoSlots}
                 </div> : <div className={!isAndroidApp() && !complete ? `mx-auto grid max-w-5xl items-start gap-4 ${options.layout !== 'classic' && options.layout ? 'md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}` : 'mx-auto max-w-2xl'}>
-                    <div className={complete ? 'hidden' : 'md:sticky md:top-6'}>
+                    <div className={complete ? 'hidden' : 'camera-session-panel md:sticky md:top-6'}>
                         <div className="camera-live-frame relative overflow-hidden rounded-3xl bg-gray-900"
                             data-camera-layout={options.layout ?? 'classic'}
                             style={!isAndroidApp() ? { '--desktop-slot-ratio': slotRatio, width: `min(100%, calc(var(--camera-panel-height) * ${frameRatio}))` } as CSSProperties : undefined}>

@@ -53,6 +53,11 @@ function App() {
 
       {website && showCustomDesigns ? <CustomizedLayouts selectedId={selectedDesignId} selectedLayout={selectedLayout}
         paperSize={layoutOptions.paperSize} onPaperSizeChange={paperSize => setLayoutOptions(current => ({ ...current, paperSize }))}
+        onDeleted={ids => {
+          if (!selectedDesignId || !ids.includes(selectedDesignId)) return
+          setSelectedDesignId(`default-${layoutOptions.layout ?? 'classic'}`)
+          setLayoutOptions(current => ({ ...current, frameColor: 'White', background: '#ffffff', backgroundImage: undefined, design: [], borderColor: undefined, borderThickness: undefined }))
+        }}
         onBack={() => { setShowCustomDesigns(false); setShowLayoutChoice(true) }}
         onCustomize={() => {
           setShowCustomDesigns(false); setShowLayoutDetails(true)

@@ -15,10 +15,13 @@ function load(file, imports, globals = {}) {
 
 function booth(permissionDenied = false, props = {}, android = false) {
     const hooks = [], timers = new Map(), exports = [], listeners = new Map()
+    const orientationListeners = new Map(), viewportListeners = new Map()
+    const viewport = { matches: false, addEventListener: (name, fn) => viewportListeners.set(name, fn), removeEventListener: name => viewportListeners.delete(name) }
     let cursor = 0, pending = [], tree, timerId = 0, captures = 0, stops = 0, shutters = 0
     const video = { readyState: 2, videoWidth: 1280, videoHeight: 720, play: async () => {}, srcObject: null,
         getBoundingClientRect: () => ({ width: 1280, height: 720 }) }
     const track = { readyState: 'live', addEventListener() {}, removeEventListener() {}, stop() { stops++; this.readyState = 'ended' } }
+    const shutterSound = { prepare() {}, beep() {}, play() { shutters++ }, stop() {} }
     const react = {
         useCallback: fn => fn,
         useState(value) { const i = cursor++; hooks[i] ??= { value }; return [hooks[i].value, next => { hooks[i].value = typeof next === 'function' ? next(hooks[i].value) : next }] },
@@ -42,7 +45,7 @@ function booth(permissionDenied = false, props = {}, android = false) {
         './PhotoStrip': { __esModule: true, default: 'PhotoStrip' },
         './StripCustomization': { __esModule: true, default: 'Customization' },
         './SaveStripButton': { __esModule: true, default: 'SaveButton' },
-        '../hooks/useShutterSound': { useShutterSound: () => ({ prepare() {}, beep() {}, play() { shutters++ }, stop() {} }) },
+        '../hooks/useShutterSound': { useShutterSound: () => shutterSound },
         '../lib/native': { isAndroidApp: () => android, SnapBerryNative: { prepareCamera: async () => {} } },
         '../lib/photoStrip': {
             ...load('src/lib/photoStrip.ts', { './fleuraQr': {}, './stripDesign': {} }),
@@ -55,7 +58,7 @@ function booth(permissionDenied = false, props = {}, android = false) {
             track.readyState = 'live'
             return { getTracks: () => [track], getVideoTracks: () => [track] }
         } } },
-        window: { addEventListener(name, fn) { listeners.set(name, fn) }, removeEventListener(name) { listeners.delete(name) }, setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id }, clearTimeout: id => timers.delete(id), confirm: () => { throw new Error('Unexpected browser confirmation') } },
+        window: { matchMedia: () => viewport, screen: { orientation: { addEventListener: (name, fn) => orientationListeners.set(name, fn), removeEventListener: name => orientationListeners.delete(name) } }, addEventListener(name, fn) { listeners.set(name, fn) }, removeEventListener(name) { listeners.delete(name) }, setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id }, clearTimeout: id => timers.delete(id), confirm: () => { throw new Error('Unexpected browser confirmation') } },
         document: { createElement: () => ({ getContext: () => ({ translate() {}, scale() {}, drawImage() {} }), toDataURL: () => `photo-${++captures}` }) },
     }).default
     function render() { cursor = 0; tree = Component({ onClose() {}, ...props }); const callbacks = pending; pending = []; callbacks.forEach(fn => fn()) }
@@ -63,10 +66,63 @@ function booth(permissionDenied = false, props = {}, android = false) {
     const all = () => nodes(tree)
     const button = label => all().find(node => node.type === 'button' && ([node.props.children].flat().some(child => typeof child === 'string' && child.trim() === label) || (label === 'Start' && /^Start \d-photo capture$/.test(node.props['aria-label'] || ''))))
     const tick = delay => { const item = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(item, `Expected timer ${delay}`); timers.delete(item[0]); item[1].fn(); render() }
-    return { render, all, button, tick, timers, video, exports, back: () => listeners.get('snapberry:back')({ preventDefault() {} }), count: () => captures, shutters: () => shutters, stops: () => stops, unmount: () => hooks.forEach(hook => hook?.cleanup?.()) }
+    return { render, all, button, tick, timers, video, exports,
+        rotate(landscape, event = 'screen') { viewport.matches = landscape; (event === 'screen' ? orientationListeners.get('change') : event === 'media' ? viewportListeners.get('change') : listeners.get(event))(); render() },
+        listenerCount: () => listeners.size + orientationListeners.size + viewportListeners.size,
+        back: () => listeners.get('snapberry:back')({ preventDefault() {} }), count: () => captures, shutters: () => shutters, stops: () => stops, unmount: () => hooks.forEach(hook => hook?.cleanup?.()) }
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
+
+test('captured photo gestures reveal one delete action and delete only once', async () => {
+    const app = booth(); app.render(); await flush()
+    app.all().find(node => node.type === 'video').props.onLoadedData(); app.render()
+    app.button('Start').props.onClick(); app.render()
+    for (let i = 0; i < 6; i++) app.tick(1000)
+    const slot = index => app.all().find(node => node.type === 'li' && node.props['aria-label'] === `Photo ${index}: captured`)
+    let prevented = false
+    slot(1).props.onContextMenu({ preventDefault() { prevented = true } })
+    assert.equal(prevented, true)
+    slot(1).props.onDoubleClick({ detail: 2, preventDefault() {} }); app.render()
+    const remove = app.all().find(node => node.props['aria-label'] === 'Delete photo 1')
+    assert.ok(remove)
+    remove.props.onClick({ stopPropagation() {} }); remove.props.onClick({ stopPropagation() {} }); app.render()
+    assert.equal(slot(1).props.children[0].props.src, 'photo-2')
+    assert.equal(app.all().filter(node => node.type === 'li' && node.props['aria-label']?.endsWith('captured')).length, 1)
+    slot(1).props.onPointerDown({ pointerType: 'touch', pointerId: 1, clientX: 0, clientY: 0, target: { closest: () => null } })
+    app.tick(600)
+    assert.ok(app.all().some(node => node.props['aria-label'] === 'Delete photo 1'))
+    app.unmount()
+})
+
+test('rotation preserves live video, captured photos and pending countdown across camera layouts', async () => {
+    for (const android of [false, true]) for (const layout of ['classic', 'postcard', 'landscape']) {
+        const app = booth(false, { initialLayout: layout }, android)
+        app.render(); await flush()
+        if (android && layout === 'postcard') { app.button('2×2 Postcard').props.onClick(); app.render() }
+        app.all().find(node => node.type === 'video').props.onLoadedData(); app.render()
+        app.button(android ? 'Start Capture' : 'Start').props.onClick(); app.render()
+        for (let i = 0; i < 4; i++) app.tick(1000)
+        const stream = app.video.srcObject
+        const timer = [...app.timers.values()].find(timer => timer.delay === 1000)
+        for (const event of ['screen', 'media', 'orientationchange', 'resize']) {
+            for (const landscape of [true, false]) {
+                app.rotate(landscape, event)
+                assert.equal(app.all()[0].props['data-orientation'], landscape ? 'landscape' : 'portrait')
+                assert.equal(app.video.srcObject, stream)
+                assert.equal(app.stops(), 0)
+                assert.equal(app.count(), 1)
+                assert.equal(app.all().filter(node => node.type === 'img')[0].props.src, 'photo-1')
+                assert.equal([...app.timers.values()].find(item => item.delay === 1000), timer)
+                assert.ok(app.all().some(node => node.props['aria-label'] === 'Capturing in 2 seconds'))
+            }
+        }
+        app.tick(1000); app.tick(1000)
+        assert.equal(app.count(), 2)
+        app.unmount()
+        assert.equal(app.listenerCount(), 0)
+    }
+})
 
 function templateGallery({ management = true, failIds = [], deferDelete = false } = {}) {
     const hooks = [], timers = new Map(), deleted = [], notifications = [], selections = [], pendingDeletes = []
@@ -142,6 +198,20 @@ test('Edit Designs right-click confirms deletion, waits for storage, and prevent
     assert.equal(gallery.saved.has('other'), true)
     assert.deepEqual(gallery.notifications, [['active']])
     assert.equal(gallery.dialog(), undefined)
+})
+
+test('double tap or click opens delete confirmation without changing selection', async () => {
+    for (const pointerType of ['touch', 'mouse']) {
+        const gallery = templateGallery(); gallery.render(); await flush()
+        gallery.card('active').props.onClick(gallery.gesture({ pointerType, timeStamp: 100 }))
+        assert.equal(gallery.card('active').props['aria-pressed'], true)
+        gallery.card('active').props.onClick(gallery.gesture({ pointerType, timeStamp: 300, detail: 2 }))
+        assert.equal(gallery.dialog().props.count, 1)
+        assert.equal(gallery.card('active').props['aria-pressed'], false)
+        assert.deepEqual(gallery.deleted, [])
+        gallery.dialog().props.onDelete(); await flush()
+        assert.deepEqual(gallery.deleted, ['active'])
+    }
 })
 
 test('touch and pen long-press open deletion; taps, scrolling, cancellation, and unmount do not', async () => {
@@ -609,7 +679,7 @@ test('leaving during countdown clears its timer and stops the camera', async () 
 test('each layout counts down before every shot, fills thumbnails in order, and plays every shutter', async () => {
     for (const layout of ['classic', 'postcard', 'landscape']) {
         const app = booth(false, { initialLayout: layout }); app.render(); await flush()
-        assert.ok(app.all().some(node => node.props.className?.includes('website-camera landscape-capture')))
+        assert.ok(app.all().some(node => ['website-camera', 'landscape-capture'].every(name => node.props.className?.split(' ').includes(name))))
         assert.equal(app.all().filter(node => node.type === 'video').length, 1)
         assert.equal(app.all().some(node => node.type === 'PhotoStrip'), false)
         assert.ok(app.all().some(node => node.type === 'button' && node.props['aria-label'] === 'Return to photo layout selection'))
