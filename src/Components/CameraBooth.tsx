@@ -7,7 +7,7 @@ import FleuraLogo from './FleuraLogo'
 import CompletedStripModal from './CompletedStripModal'
 import ExitSessionDialog from './ExitSessionDialog'
 import PrintPreview from './PrintPreview'
-import { generateWebsiteClassicSheet, generatePhotoStrip, websiteLayoutForOptions, photoFrames, type StripOptions } from '../lib/photoStrip'
+import { generateWebsiteClassicSheet, generatePhotoStrip, layoutForOptions, websiteLayoutForOptions, photoFrames, type StripOptions } from '../lib/photoStrip'
 import './CameraBooth.css'
 
 type CameraBoothProps = { onClose: () => void; onExitToLayouts?: () => void; initialLayout?: StripOptions['layout']; initialOptions?: StripOptions }
@@ -48,7 +48,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const [options, setOptions] = useState<StripOptions>({ monochrome: false, frameColor: 'White', caption: '', date: '', ...(!isAndroidApp() && initialLayout ? { layout: initialLayout } : {}), ...(!isAndroidApp() ? initialOptions : {}) })
     const photoCount = options.layout === 'landscape' && !isAndroidApp() ? 3 : 4
     const frameRatio = 3 / 4
-    const slotLayout = websiteLayoutForOptions(options)
+    const slotLayout = isAndroidApp() ? layoutForOptions(options) : websiteLayoutForOptions(options)
     const slotFrame = photoFrames(slotLayout)[0]
     const slotRatio = slotFrame.width / slotFrame.height
     const [stripImage, setStripImage] = useState<string | null>(null)
@@ -211,15 +211,12 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                     throw new Error('Camera is not ready. Please retry the session.')
                 }
                 const canvas = document.createElement('canvas')
-                let sourceWidth = video.videoWidth, sourceHeight = video.videoHeight
-                if (!isAndroidApp()) {
-                    const bounds = video.getBoundingClientRect()
-                    if (!bounds.width || !bounds.height) throw new Error('Camera preview is not visible. Please retry.')
-                    // Match the displayed object-fit: cover crop, using native pixels.
-                    const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight)
-                    sourceWidth = bounds.width / scale
-                    sourceHeight = bounds.height / scale
-                }
+                const bounds = video.getBoundingClientRect()
+                if (!bounds.width || !bounds.height) throw new Error('Camera preview is not visible. Please retry.')
+                // The preview uses centered object-fit: cover, including after rotation.
+                const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight)
+                const sourceWidth = bounds.width / scale
+                const sourceHeight = bounds.height / scale
                 canvas.width = Math.round(sourceWidth)
                 canvas.height = Math.round(sourceHeight)
                 const context = canvas.getContext('2d')
@@ -391,7 +388,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                         ? 'Taking Photo ' + (photos.length + 1) + ' of ' + photoCount
                         : error ? 'Camera needs attention' : cameraReady ? '' : 'Starting camera…'}
                 </p>
-                {fullscreenCapture ? <div className={`landscape-capture-stage ${complete ? 'hidden' : ''}`}>
+                {fullscreenCapture ? <div className={`landscape-capture-stage ${complete ? 'hidden' : ''}`} style={{ '--preview-ratio': slotRatio } as CSSProperties}>
                     <video ref={videoRef} autoPlay playsInline muted controls={false} onLoadedData={() => setCameraReady(true)}
                         aria-label="Live camera preview" style={{ opacity: cameraReady ? 1 : 0 }}
                         className="landscape-live-video camera-preview" />
@@ -411,9 +408,9 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                     <div className={complete ? 'hidden' : 'camera-session-panel md:sticky md:top-6'}>
                         <div className="camera-live-frame relative overflow-hidden rounded-3xl bg-gray-900"
                             data-camera-layout={options.layout ?? 'classic'}
-                            style={!isAndroidApp() ? { '--desktop-slot-ratio': slotRatio, width: `min(100%, calc(var(--camera-panel-height) * ${frameRatio}))` } as CSSProperties : undefined}>
+                            style={{ '--desktop-slot-ratio': slotRatio, '--preview-ratio': slotRatio, ...(!isAndroidApp() ? { width: `min(100%, calc(var(--camera-panel-height) * ${frameRatio}))` } : {}) } as CSSProperties}>
                             <video ref={videoRef} autoPlay playsInline muted controls={false} onLoadedData={() => setCameraReady(true)}
-                                style={{ opacity: cameraReady ? 1 : 0, ...(!isAndroidApp() ? { aspectRatio: frameRatio, objectPosition: 'center' } : {}) }}
+                                style={{ opacity: cameraReady ? 1 : 0, aspectRatio: slotRatio, objectPosition: 'center' }}
                                 className="camera-preview aspect-[3/4] max-h-[60svh] min-h-48 w-full object-cover scale-x-[-1]" />
                             {countdown !== null && <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                                 <span aria-label={'Capturing in ' + countdown + ' seconds'} className="text-8xl font-bold text-white">{countdown}</span>

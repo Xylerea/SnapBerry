@@ -14,7 +14,7 @@ function load(file, imports, globals = {}) {
 }
 
 function booth(permissionDenied = false, props = {}, android = false) {
-    const hooks = [], timers = new Map(), exports = [], listeners = new Map()
+    const hooks = [], timers = new Map(), exports = [], listeners = new Map(), draws = []
     const orientationListeners = new Map(), viewportListeners = new Map()
     const viewport = { matches: false, addEventListener: (name, fn) => viewportListeners.set(name, fn), removeEventListener: name => viewportListeners.delete(name) }
     let cursor = 0, pending = [], tree, timerId = 0, captures = 0, stops = 0, shutters = 0
@@ -59,20 +59,37 @@ function booth(permissionDenied = false, props = {}, android = false) {
             return { getTracks: () => [track], getVideoTracks: () => [track] }
         } } },
         window: { matchMedia: () => viewport, screen: { orientation: { addEventListener: (name, fn) => orientationListeners.set(name, fn), removeEventListener: name => orientationListeners.delete(name) } }, addEventListener(name, fn) { listeners.set(name, fn) }, removeEventListener(name) { listeners.delete(name) }, setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id }, clearTimeout: id => timers.delete(id), confirm: () => { throw new Error('Unexpected browser confirmation') } },
-        document: { createElement: () => ({ getContext: () => ({ translate() {}, scale() {}, drawImage() {} }), toDataURL: () => `photo-${++captures}` }) },
+        document: { createElement: () => ({ getContext: () => ({ translate(...args) { draws.push(['translate', ...args]) }, scale(...args) { draws.push(['scale', ...args]) }, drawImage(...args) { draws.push(['draw', ...args.slice(1)]) } }), toDataURL: () => `photo-${++captures}` }) },
     }).default
     function render() { cursor = 0; tree = Component({ onClose() {}, ...props }); const callbacks = pending; pending = []; callbacks.forEach(fn => fn()) }
     function nodes(node) { return !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)] }
     const all = () => nodes(tree)
     const button = label => all().find(node => node.type === 'button' && ([node.props.children].flat().some(child => typeof child === 'string' && child.trim() === label) || (label === 'Start' && /^Start \d-photo capture$/.test(node.props['aria-label'] || ''))))
     const tick = delay => { const item = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(item, `Expected timer ${delay}`); timers.delete(item[0]); item[1].fn(); render() }
-    return { render, all, button, tick, timers, video, exports,
+    return { render, all, button, tick, timers, video, exports, draws,
         rotate(landscape, event = 'screen') { viewport.matches = landscape; (event === 'screen' ? orientationListeners.get('change') : event === 'media' ? viewportListeners.get('change') : listeners.get(event))(); render() },
         listenerCount: () => listeners.size + orientationListeners.size + viewportListeners.size,
         back: () => listeners.get('snapberry:back')({ preventDefault() {} }), count: () => captures, shutters: () => shutters, stops: () => stops, unmount: () => hooks.forEach(hook => hook?.cleanup?.()) }
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
+
+test('capture uses the current centered preview crop and mirror on web and Android after rotation', async () => {
+    for (const android of [false, true]) {
+        const app = booth(false, {}, android)
+        app.render(); await flush()
+        app.all().find(node => node.type === 'video').props.onLoadedData(); app.render()
+        app.button(android ? 'Start Capture' : 'Start').props.onClick(); app.render()
+        app.video.getBoundingClientRect = () => ({ width: 400, height: 400 })
+        for (let i = 0; i < 3; i++) app.tick(1000)
+        assert.deepEqual(app.draws.slice(0, 3), [['translate', 720, 0], ['scale', -1, 1], ['draw', 280, 0, 720, 720, 0, 0, 720, 720]])
+        app.rotate(true)
+        app.video.getBoundingClientRect = () => ({ width: 800, height: 400 })
+        for (let i = 0; i < 3; i++) app.tick(1000)
+        assert.deepEqual(app.draws.slice(3, 6), [['translate', 1280, 0], ['scale', -1, 1], ['draw', 0, 40, 1280, 640, 0, 0, 1280, 640]])
+        app.unmount()
+    }
+})
 
 test('captured photo gestures reveal one delete action and delete only once', async () => {
     const app = booth(); app.render(); await flush()
