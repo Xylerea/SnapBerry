@@ -36,7 +36,7 @@ export default function CompletedStripModal({ photos, options, image, ready, err
     }, [])
 
     if (!isAndroidApp()) {
-        const paper = paperForLayout(options.layout)
+        const paper = paperForLayout(options.layout, options.paperSize)
         return <dialog ref={dialogRef} className="completed-strip-modal website-result-modal" aria-labelledby="completed-title"
             onCancel={event => event.preventDefault()}>
             <h2 id="completed-title" className="text-center text-2xl font-bold text-pink-600">Your Sweet Moments 🍓</h2>

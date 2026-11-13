@@ -3,7 +3,7 @@ import type { StripOptions } from './photoStrip'
 export type StripTemplate = {
     id: string
     name: string
-    settings: Pick<StripOptions, 'layout' | 'background' | 'backgroundImage' | 'frameColor' | 'design'>
+    settings: Pick<StripOptions, 'layout' | 'paperSize' | 'background' | 'backgroundImage' | 'frameColor' | 'design' | 'borderColor' | 'borderThickness'>
 }
 
 function openTemplates(): Promise<IDBDatabase> {

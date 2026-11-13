@@ -29,3 +29,7 @@ output/*.apk
 *.njsproj
 *.sln
 *.sw?
+
+/SnapBerry-test/
+
+/public/jesus-ministry-thanksgiving.png

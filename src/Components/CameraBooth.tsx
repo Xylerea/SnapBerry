@@ -1,13 +1,13 @@
-import PhotoStrip from './PhotoStrip'
 import StripDesigner from './StripDesigner'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Camera, X } from 'lucide-react'
 import { useShutterSound } from '../hooks/useShutterSound'
 import { isAndroidApp, SnapBerryNative } from '../lib/native'
 import FleuraLogo from './FleuraLogo'
 import CompletedStripModal from './CompletedStripModal'
+import ExitSessionDialog from './ExitSessionDialog'
 import PrintPreview from './PrintPreview'
-import { generateWebsiteClassicSheet, generatePhotoStrip, websiteLayoutForOptions, WEBSITE_CLASSIC_LAYOUT, type StripOptions } from '../lib/photoStrip'
+import { generateWebsiteClassicSheet, generatePhotoStrip, websiteLayoutForOptions, photoFrames, type StripOptions } from '../lib/photoStrip'
 import './CameraBooth.css'
 
 type CameraBoothProps = { onClose: () => void; onExitToLayouts?: () => void; initialLayout?: StripOptions['layout']; initialOptions?: StripOptions }
@@ -17,6 +17,8 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const videoRef = useRef<HTMLVideoElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const capturingRef = useRef(false)
+    const exitDestinationRef = useRef<(() => void) | null>(null)
+    const [showExitDialog, setShowExitDialog] = useState(false)
     const [photos, setPhotos] = useState<string[]>([])
     const [countdown, setCountdown] = useState<number | null>(null)
     const [cameraReady, setCameraReady] = useState(false)
@@ -25,9 +27,9 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const [options, setOptions] = useState<StripOptions>({ monochrome: false, frameColor: 'White', caption: '', date: '', ...(!isAndroidApp() && initialLayout ? { layout: initialLayout } : {}), ...(!isAndroidApp() ? initialOptions : {}) })
     const photoCount = options.layout === 'landscape' && !isAndroidApp() ? 3 : 4
     const frameRatio = 3 / 4
-    const slotLayout = !options.layout || options.layout === 'classic' ? WEBSITE_CLASSIC_LAYOUT : websiteLayoutForOptions(options)
-    const slotColumns = slotLayout.columns ?? 1
-    const slotRatio = (slotLayout.width - 2 * slotLayout.border - (slotColumns - 1) * slotLayout.gap) / slotColumns / slotLayout.photoHeight
+    const slotLayout = websiteLayoutForOptions(options)
+    const slotFrame = photoFrames(slotLayout)[0]
+    const slotRatio = slotFrame.width / slotFrame.height
     const [stripImage, setStripImage] = useState<string | null>(null)
     const [stripError, setStripError] = useState('')
     const [exporting, setExporting] = useState(false)
@@ -35,21 +37,37 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const [showDesigner, setShowDesigner] = useState(false)
     const [showPrintPreview, setShowPrintPreview] = useState(false)
     const complete = photos.length === photoCount
+    // Every website layout shares the Landscape Postcard camera stage.
+    // Only the shot count and final print composition depend on the layout.
+    const fullscreenCapture = !isAndroidApp()
     // The rendered result is tied to its source/settings, preventing stale downloads.
     const [renderedSettings, setRenderedSettings] = useState('')
     const settingsKey = JSON.stringify(options)
     const exportReady = complete && !exporting && !!stripImage && renderedSettings === settingsKey
 
+    const requestExit = useCallback((navigate: () => void) => {
+        if (exitDestinationRef.current) return
+        exitDestinationRef.current = navigate
+        stopSounds()
+        setShowExitDialog(true)
+    }, [stopSounds])
+
+    const keepTakingPhotos = useCallback(() => {
+        exitDestinationRef.current = null
+        setShowExitDialog(false)
+    }, [])
+
     useEffect(() => {
         function back(event: Event) {
             event.preventDefault()
-            if (showDesigner) setShowDesigner(false)
+            if (showExitDialog) keepTakingPhotos()
+            else if (showDesigner) setShowDesigner(false)
             else if (showPrintPreview) setShowPrintPreview(false)
-            else if (!photos.length || window.confirm('Return to the homepage? Your photos will be discarded.')) onClose()
+            else requestExit(onClose)
         }
         window.addEventListener('snapberry:back', back)
         return () => window.removeEventListener('snapberry:back', back)
-    }, [showDesigner, showPrintPreview, photos.length, onClose])
+    }, [showDesigner, showPrintPreview, showExitDialog, keepTakingPhotos, requestExit, onClose])
 
     useEffect(() => {
         if (photos.length !== photoCount) return
@@ -138,9 +156,9 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
 
     // A single timeout drives the sequence and is cleared on every change or unmount.
     useEffect(() => {
-        if (countdown === null) return
+        if (countdown === null || showExitDialog) return
         const timer = window.setTimeout(() => {
-            if (!capturingRef.current) return
+            if (!capturingRef.current || exitDestinationRef.current) return
             if (countdown > 1) {
                 countdownBeep()
                 setCountdown(countdown - 1)
@@ -196,10 +214,10 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
             }
         }, 1000)
         return () => window.clearTimeout(timer)
-    }, [countdown, photos, photoCount, playShutter, countdownBeep, stopSounds])
+    }, [countdown, photos, photoCount, playShutter, countdownBeep, stopSounds, showExitDialog])
 
     function startSession() {
-        if (capturingRef.current || !cameraReady || error || complete) return
+        if (exitDestinationRef.current || capturingRef.current || !cameraReady || error || complete) return
         prepareShutter()
         capturingRef.current = true
         setPhotos([])
@@ -238,26 +256,57 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     }
 
     function returnHome() {
-        if (!photos.length || window.confirm('Return to the homepage? Your photos will be discarded.')) onClose()
+        requestExit(onClose)
     }
 
     function exitPhotoSession() {
-        if ((capturingRef.current || countdown !== null || photos.length > 0)
-            && !window.confirm('Exit photo session? Your captured photos will be lost.')) return
+        requestExit(onExitToLayouts ?? onClose)
+    }
+
+    function confirmExitSession() {
+        const navigate = exitDestinationRef.current
+        if (!navigate) return
         capturingRef.current = false
+        exitDestinationRef.current = null
+        setShowExitDialog(false)
         setCountdown(null)
         stopSounds()
         setPhotos([])
         setStripImage(null)
+        setStripError('')
+        setExporting(false)
+        setCameraReady(false)
         streamRef.current?.getTracks().forEach(track => track.stop())
         streamRef.current = null
         if (videoRef.current) videoRef.current.srcObject = null
-        const navigate = onExitToLayouts ?? onClose
         navigate()
     }
 
+    const photoSlots = (countdown !== null || photos.length > 0) && <ol aria-label="Captured photos"
+        className={fullscreenCapture ? 'landscape-photo-slots' : 'camera-photo-slots'}
+        style={{ '--photo-slot-ratio': slotRatio, '--photo-slot-count': photoCount } as CSSProperties}>
+        {Array.from({ length: photoCount }, (_, index) => <li key={index}
+            aria-label={`Photo ${index + 1}: ${photos[index] ? 'captured' : 'empty'}`}
+            className={photos[index] ? 'is-captured' : 'is-empty'}>
+            {photos[index] ? <img src={photos[index]} alt={`Captured photo ${index + 1}`}
+                style={{ filter: options.monochrome ? 'grayscale(1)' : undefined }} />
+                : <span aria-hidden="true">{index + 1}</span>}
+        </li>)}
+    </ol>
+
+    const captureControls = <div className="camera-capture-controls contents">
+        <button type="button" onClick={startSession} disabled={countdown !== null || !cameraReady || !!error}
+            className="mx-auto mt-4 flex min-h-12 items-center gap-2 rounded-full bg-pink-600 px-8 py-4 font-semibold text-white transition hover:bg-pink-700 disabled:opacity-50">
+            <Camera size={20} /> {countdown !== null ? 'Get Ready!' : 'Start Capture'}
+        </button>
+        {countdown !== null && <button type="button" onClick={cancelCapture}
+            className="mx-auto mt-3 flex min-h-12 items-center justify-center gap-2 rounded-full border border-pink-300 px-8 py-3 font-semibold text-pink-600 hover:bg-pink-100">
+            <X size={18} /> Cancel Capture
+        </button>}
+    </div>
+
     return (
-        <div className={`camera-booth min-h-screen bg-[#FFF5F8] px-4 py-6 ${!isAndroidApp() ? 'website-camera' : ''}`}>
+        <div className={`camera-booth min-h-screen bg-[#FFF5F8] px-4 py-6 ${!isAndroidApp() ? 'website-camera' : ''} ${fullscreenCapture && !complete ? 'landscape-capture' : ''}`}>
             <div className="mx-auto max-w-5xl">
                 <header className="mb-6 flex items-center justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -271,12 +320,28 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                         className="shrink-0 rounded-full p-3 text-pink-600 hover:bg-pink-100"><X size={26} /></button>
                 </header>
                 <div className="camera-content">
-                <p role="status" aria-live="polite" className={!isAndroidApp() && (countdown !== null || complete) ? 'sr-only' : 'mb-4 text-center font-semibold text-pink-600'}>
+                <p role="status" aria-live="polite" className={fullscreenCapture || (!isAndroidApp() && (countdown !== null || complete)) ? 'sr-only' : 'mb-4 text-center font-semibold text-pink-600'}>
                     {complete ? `All ${photoCount} photos are ready!` : countdown !== null
                         ? 'Taking Photo ' + (photos.length + 1) + ' of ' + photoCount
                         : error ? 'Camera needs attention' : cameraReady ? '' : 'Starting camera…'}
                 </p>
-                <div className={!isAndroidApp() && !complete ? `mx-auto grid max-w-5xl items-start gap-4 ${options.layout !== 'classic' && options.layout ? 'md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}` : 'mx-auto max-w-2xl'}>
+                {fullscreenCapture ? <div className={`landscape-capture-stage ${complete ? 'hidden' : ''}`}>
+                    <video ref={videoRef} autoPlay playsInline muted controls={false} onLoadedData={() => setCameraReady(true)}
+                        aria-label="Live camera preview" style={{ opacity: cameraReady ? 1 : 0 }}
+                        className="landscape-live-video camera-preview" />
+                    {!cameraReady && !error && <p className="landscape-camera-loading">Starting camera…</p>}
+                    {countdown !== null && <div className="landscape-countdown">
+                        <span aria-label={'Capturing in ' + countdown + ' seconds'}>{countdown}</span>
+                    </div>}
+                    {photos.length > 0 && <div key={cameraAttempt + ':' + photos.length} aria-hidden="true" className="camera-shutter pointer-events-none absolute inset-0 bg-white" />}
+                    {countdown === null && photos.length === 0 && <div className="landscape-capture-bottom">
+                        <button type="button" onClick={startSession} disabled={!cameraReady || !!error} aria-label={`Start ${photoCount}-photo capture`}
+                            className="landscape-start rounded-full bg-pink-600 font-semibold text-white transition hover:bg-pink-700 disabled:opacity-50">
+                            <Camera size={28} aria-hidden="true" /><span className="sr-only">Start</span>
+                        </button>
+                    </div>}
+                    {photoSlots}
+                </div> : <div className={!isAndroidApp() && !complete ? `mx-auto grid max-w-5xl items-start gap-4 ${options.layout !== 'classic' && options.layout ? 'md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}` : 'mx-auto max-w-2xl'}>
                     <div className={complete ? 'hidden' : 'md:sticky md:top-6'}>
                         <div className="camera-live-frame relative overflow-hidden rounded-3xl bg-gray-900"
                             data-camera-layout={options.layout ?? 'classic'}
@@ -288,6 +353,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                                 <span aria-label={'Capturing in ' + countdown + ' seconds'} className="text-8xl font-bold text-white">{countdown}</span>
                             </div>}
                             {photos.length > 0 && <div key={cameraAttempt + ':' + photos.length} aria-hidden="true" className="camera-shutter pointer-events-none absolute inset-0 bg-white" />}
+                            {photoSlots}
                         </div>
                         {isAndroidApp() && <div className="mt-3 flex justify-center gap-2" aria-label="Photo layout">
                             {((isAndroidApp() ? ['classic', 'postcard'] : ['classic', 'postcard', 'landscape']) as StripOptions['layout'][]).map(layout => <button key={layout} type="button" disabled={countdown !== null || photos.length > 0} aria-pressed={(options.layout ?? 'classic') === layout}
@@ -297,23 +363,11 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                         </div>}
                         {isAndroidApp() && <button type="button" disabled={countdown !== null || photos.length > 0} onClick={() => setShowDesigner(true)} className="mx-auto mt-3 block min-h-11 rounded-full px-5 py-2 text-sm font-semibold text-pink-600 hover:bg-pink-100 disabled:opacity-50">Design Strip</button>}
                         {isAndroidApp() && <p className="mt-4 text-center text-sm text-gray-500">{photoCount} photos, with 3 seconds to pose before each one.</p>}
-                        <div className="camera-capture-controls contents">
-                        <button type="button" onClick={startSession} disabled={countdown !== null || !cameraReady || !!error}
-                            className="mx-auto mt-4 flex min-h-12 items-center gap-2 rounded-full bg-pink-600 px-8 py-4 font-semibold text-white transition hover:bg-pink-700 disabled:opacity-50">
-                            <Camera size={20} /> {countdown !== null ? 'Get Ready!' : 'Start Capture'}
-                        </button>
-                        {countdown !== null && <button type="button" onClick={cancelCapture}
-                            className="mx-auto mt-3 flex min-h-12 items-center justify-center gap-2 rounded-full border border-pink-300 px-8 py-3 font-semibold text-pink-600 hover:bg-pink-100">
-                            <X size={18} /> Cancel Capture
-                        </button>}
-                        </div>
+                        {captureControls}
                     </div>
-                    {!isAndroidApp() && !complete && <section aria-label="Captured photos" className={`camera-design-preview min-w-0 self-start md:sticky md:top-6 ${options.layout === 'landscape' ? 'is-landscape' : ''}`}>
-                        <PhotoStrip photos={photos} {...options} generatedImage={null} live paired={!options.layout || options.layout === 'classic'} />
-                    </section>}
+                </div>}
                 </div>
-                </div>
-                {error && <div className="mt-4 text-center">
+                {error && <div className={`mt-4 text-center ${fullscreenCapture ? 'landscape-camera-error' : ''}`}>
                     <p role="alert" className="text-red-600">{error}</p>
                     <button type="button" onClick={resetSession} className="mt-3 min-h-12 rounded-full border border-pink-200 px-6 py-3 font-medium text-pink-600">Retry camera</button>
                 </div>}
@@ -323,7 +377,8 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
             {complete && !showPrintPreview && !showDesigner && <CompletedStripModal photos={photos} options={options} image={stripImage} ready={exportReady} error={stripError}
                 onDesign={!isAndroidApp() ? () => setShowDesigner(true) : undefined} onClose={returnHome} onRetake={retakePhotos} onPrint={() => { if (exportReady) setShowPrintPreview(true) }}
                 onRetry={() => { setStripError(''); setExporting(true); setExportAttempt(attempt => attempt + 1) }} />}
-            {complete && showPrintPreview && stripImage && <PrintPreview layout={options.layout} image={stripImage} onBack={() => setShowPrintPreview(false)} />}
+            {complete && showPrintPreview && stripImage && <PrintPreview layout={options.layout} paperSize={options.paperSize} image={stripImage} onBack={() => setShowPrintPreview(false)} />}
+            {showExitDialog && <ExitSessionDialog onKeep={keepTakingPhotos} onExit={confirmExitSession} />}
         </div>
     )
 }

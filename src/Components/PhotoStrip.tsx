@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
-import { generateClassicPrintSheet, classicPrintPlacement, generateWebsiteClassicSheet, WEBSITE_CLASSIC_LAYOUT, paperForLayout, generatePhotoStrip, FRAME_COLORS, PHOTO_COUNT, photoCountForOptions, layoutForOptions, websiteLayoutForOptions, stripHeight, designArea, type StripOptions } from '../lib/photoStrip'
+import { generateClassicPrintSheet, classicPrintPlacement, generateWebsiteClassicSheet, paperForLayout, generatePhotoStrip, FRAME_COLORS, PHOTO_COUNT, photoCountForOptions, photoFrames, photoBorderRects, layoutForOptions, websiteLayoutForOptions, stripHeight, designArea, type StripOptions } from '../lib/photoStrip'
 import { isAndroidApp } from '../lib/native'
 import { FLEURA_QR_CAPTION, FLEURA_QR_IMAGE } from '../lib/fleuraQr'
 import { DESIGN_FONTS, designBounds, constrainDesign } from '../lib/stripDesign'
 
 type PhotoStripProps = StripOptions & { photos: string[]; generatedImage: string | null; live?: boolean; paired?: boolean; fullWidth?: boolean }
 
-export default function PhotoStrip({ photos, monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice, generatedImage, live = false, paired = false, fullWidth = false }: PhotoStripProps) {
+export default function PhotoStrip({ photos, monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice, paperSize = '4R', borderColor = '#ffffff', borderThickness = 0, generatedImage, live = false, paired = false, fullWidth = false }: PhotoStripProps) {
     const [rendered, setRendered] = useState<{ key: string; image: string } | null>(null)
-    const key = JSON.stringify({ photos, options: { monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice } })
+    const key = JSON.stringify({ photos, options: { monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice, paperSize, borderColor, borderThickness } })
     useEffect(() => {
         if ((!live && !paired && layoutChoice !== 'landscape' && !(layoutChoice === 'postcard' && !isAndroidApp())) || generatedImage) return
         let cancelled = false
@@ -21,7 +21,7 @@ export default function PhotoStrip({ photos, monochrome, frameColor, caption, da
             return () => { cancelled = true }
     }, [key, live, layoutChoice, generatedImage, paired])
     const displayImage = generatedImage ?? (rendered?.key === key ? rendered.image : null)
-    const options = { monochrome, frameColor, caption, date, layout: layoutChoice }
+    const options = { monochrome, frameColor, caption, date, layout: layoutChoice, paperSize, borderColor, borderThickness }
     const layout = isAndroidApp() ? layoutForOptions(options) : websiteLayoutForOptions(options)
     const photoCount = layoutChoice === 'landscape' ? photoCountForOptions({ layout: layoutChoice }) : !live && !fullWidth && photos.length === 2 ? 2 : PHOTO_COUNT
     const height = stripHeight(layout, photoCount)
@@ -30,65 +30,67 @@ export default function PhotoStrip({ photos, monochrome, frameColor, caption, da
     const postcard = layout.columns === 2
     const landscape = layout.photoCount === 3
     const editableWidth = area.width
-    const photoWidth = postcard ? 525 : layout.width - 2 * layout.border
+    const frames = photoFrames(layout, photoCount)
+    const photoWidth = frames[0].width
+    const borders = (source = frames) => source.flatMap(frame => photoBorderRects(frame, borderThickness))
+        .map((edge, index) => <rect key={index} {...edge} fill={borderColor} />)
     if (paired) {
-        const paper = paperForLayout('classic')
+        const paper = paperForLayout('classic', paperSize)
         if (isAndroidApp()) {
             const placement = classicPrintPlacement()
-            const copyOptions = { monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice }
+            const copyOptions = { monochrome, frameColor, caption, date, design, background, backgroundImage, layout: layoutChoice, paperSize, borderColor, borderThickness }
             return <div className="relative mx-auto w-full max-w-[400px] bg-white shadow-lg" style={{ aspectRatio: `${paper.width} / ${paper.height}` }}>
-                {displayImage ? <img src={displayImage} alt="Two identical four-photo strips on 4R portrait paper" className="block h-full w-full object-contain" />
+                {displayImage ? <img src={displayImage} alt={`Two identical four-photo strips on ${paperSize} portrait paper`} className="block h-full w-full object-contain" />
                     : [0, 1].map(copy => <div key={copy} className="absolute" style={{ left: `${(placement.left + copy * (placement.width + placement.gap)) / paper.width * 100}%`, top: `${placement.top / paper.height * 100}%`, width: `${placement.width / paper.width * 100}%`, height: `${placement.height / paper.height * 100}%` }}>
                         <PhotoStrip photos={photos} {...copyOptions} generatedImage={null} fullWidth />
                     </div>)}
             </div>
         }
-        const classic = WEBSITE_CLASSIC_LAYOUT
+        const classic = websiteLayoutForOptions({ ...options, layout: 'classic' })
         const frameWidth = classic.width - 2 * classic.border
         return <div className="relative mx-auto w-full max-w-[400px] bg-white shadow-lg" style={{ aspectRatio: `${paper.width} / ${paper.height}` }}>
-            {displayImage ? <img src={displayImage} alt="Two identical four-photo strips on 4R portrait paper" className="block h-full w-full object-contain" />
-                : <svg viewBox="0 0 1200 1800" className="block h-full w-full" aria-label="Classic double-strip preview">
+            {displayImage ? <img src={displayImage} alt={`Two identical four-photo strips on ${paperSize} portrait paper`} className="block h-full w-full object-contain" />
+                : <svg viewBox={`0 0 ${paper.width} ${paper.height}`} className="block h-full w-full" aria-label="Classic double-strip preview">
                     {[0, 1].map(copy => <g key={copy} transform={`translate(${copy * classic.width} 0)`}>
-                        <rect width="600" height="1800" fill={background ?? FRAME_COLORS[frameColor]} />
-                        {backgroundImage && <image href={backgroundImage} width="600" height="1800" preserveAspectRatio="xMidYMid slice" />}
+                        <rect width={classic.width} height={paper.height} fill={background ?? FRAME_COLORS[frameColor]} />
+                        {backgroundImage && <image href={backgroundImage} width={classic.width} height={paper.height} preserveAspectRatio="xMidYMid slice" />}
                         {Array.from({ length: PHOTO_COUNT }, (_, index) => {
                             const y = classic.border + index * (classic.photoHeight + classic.gap)
                             return <g key={index}>{photos[index]
                                 ? <image href={photos[index]} x={classic.border} y={y} width={frameWidth} height={classic.photoHeight} preserveAspectRatio="xMidYMid slice" style={{ filter: monochrome ? 'grayscale(1)' : undefined }} />
-                                : <><rect x={classic.border} y={y} width={frameWidth} height={classic.photoHeight} fill="#fdf2f8" /><text x="300" y={y + classic.photoHeight / 2} textAnchor="middle" fontSize="24" fill="#9d174d">Photo {index + 1}</text></>}</g>
+                                : <><rect x={classic.border} y={y} width={frameWidth} height={classic.photoHeight} fill="#fdf2f8" /><text x={classic.width / 2} y={y + classic.photoHeight / 2} textAnchor="middle" fontSize="24" fill="#9d174d">Photo {index + 1}</text></>}</g>
                         })}
+                        {borders(photoFrames(classic))}
                     </g>)}
                 </svg>}
         </div>
     }
     return (
         <div className={`relative mx-auto w-full min-w-0 bg-white shadow-lg ${fullWidth ? 'max-w-none' : landscape ? 'max-w-[600px]' : live && postcard ? 'max-w-[400px]' : 'max-w-[280px]'}`}
-            style={{ aspectRatio: `${layout.width} / ${height}`, backgroundColor: background ?? FRAME_COLORS[frameColor], backgroundImage: backgroundImage ? `url("${backgroundImage}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+            style={{ aspectRatio: `${layout.width} / ${height}`, backgroundColor: background ?? FRAME_COLORS[frameColor], backgroundImage: backgroundImage ? `url("${backgroundImage}")` : undefined, backgroundSize: layout.designScale ? 'contain' : 'cover', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }}>
             {displayImage ? (
                 <img src={displayImage} alt={`Completed ${photoCount}-photo SnapBerry strip`} className="block h-full w-full object-contain" />
-            ) : layout.websitePostcard ? (
-                <svg viewBox={`0 0 ${layout.width} ${height}`} className="block h-full w-full" aria-label="2×2 portrait postcard preview">
-                    {Array.from({ length: PHOTO_COUNT }, (_, index) => {
-                        const x = layout.border + (index % 2) * (photoWidth + layout.gap)
-                        const y = layout.border + Math.floor(index / 2) * (layout.photoHeight + layout.gap)
+            ) : layout.websitePostcard || layout.websiteClassic ? (
+                <svg viewBox={`0 0 ${layout.width} ${height}`} className="block h-full w-full" aria-label={layout.websiteClassic ? 'Photo Strip preview' : '2×2 portrait postcard preview'}>
+                    {frames.map(({ x, y, width: photoWidth }, index) => {
                         return <g key={index}>{photos[index]
                             ? <image href={photos[index]} x={x} y={y} width={photoWidth} height={layout.photoHeight} preserveAspectRatio="xMidYMid slice" style={{ filter: monochrome ? 'grayscale(1)' : undefined }} />
                             : <><rect x={x} y={y} width={photoWidth} height={layout.photoHeight} fill="#fdf2f8" /><text x={x + photoWidth / 2} y={y + layout.photoHeight / 2} textAnchor="middle" fontSize="40" fill="#9d174d">Photo {index + 1}</text></>}</g>
                     })}
+                    {borders()}
                 </svg>
             ) : landscape ? (
-                <svg viewBox="0 0 1800 1200" className="block h-full w-full" aria-label="Landscape Postcard preview">
-                    {Array.from({ length: 3 }, (_, index) => {
-                        const width = (layout.width - 2 * layout.border - layout.gap) / 2
-                        const x = layout.border + (index % 2) * (width + layout.gap)
-                        const y = layout.border + Math.floor(index / 2) * (layout.photoHeight + layout.gap)
+                <svg viewBox={`0 0 ${layout.width} ${height}`} className="block h-full w-full" aria-label="Landscape Postcard preview">
+                    <desc>Photos 1 and 2 across the top, Photo 3 at the bottom left, and the bottom right open for your design.</desc>
+                    {frames.map(({ x, y, width }, index) => {
                         return <g key={index}>{photos[index]
                             ? <image href={photos[index]} x={x} y={y} width={width} height={layout.photoHeight} preserveAspectRatio="xMidYMid slice" style={{ filter: monochrome ? 'grayscale(1)' : undefined }} />
                             : <><rect x={x} y={y} width={width} height={layout.photoHeight} fill="#fdf2f8" /><text x={x + width / 2} y={y + layout.photoHeight / 2} textAnchor="middle" fontSize="40" fill="#9d174d">Photo {index + 1}</text></>}</g>
                     })}
                     {design?.map(raw => {
-                        const item = constrainDesign(raw, editableWidth, editableHeight), bounds = designBounds(item)
-                        return <g key={item.id} transform={`translate(${area.left + item.x * editableWidth / 100} ${area.top + editableHeight * item.y / 100}) rotate(${item.rotation ?? 0})`}>
+                        const scale = layout.designScale ?? 1
+                        const item = constrainDesign(raw, editableWidth / scale, editableHeight / scale), bounds = designBounds(item)
+                        return <g key={item.id} transform={`translate(${area.left + item.x * editableWidth / 100} ${area.top + editableHeight * item.y / 100}) scale(${scale}) rotate(${item.rotation ?? 0})`}>
                             {item.kind === 'image' ? <image href={item.value} x={-bounds.width / 2} y={-bounds.height / 2} width={bounds.width} height={bounds.height} preserveAspectRatio="xMidYMid meet" />
                                 : <text textAnchor="middle" y={item.size * 0.32} fontFamily={DESIGN_FONTS[item.font]} fontSize={item.size} fill="#342b31">{item.value}</text>}
                         </g>
@@ -97,6 +99,7 @@ export default function PhotoStrip({ photos, monochrome, frameColor, caption, da
                         <image href={FLEURA_QR_IMAGE} x="1510" y="1000" width="180" height="180" />
                         <text x="900" y="1180" textAnchor="middle" fontSize="28" fill="#342b31">{FLEURA_QR_CAPTION}</text>
                     </>}
+                    {borders()}
                 </svg>
             ) : (
                 <div style={{ padding: `${layout.border / layout.width * 100}%` }}>
@@ -141,6 +144,8 @@ export default function PhotoStrip({ photos, monochrome, frameColor, caption, da
                     </div>}
                 </div>
             )}
+            {!displayImage && !layout.websiteClassic && !layout.websitePostcard && !landscape && borderThickness > 0 &&
+                <svg viewBox={`0 0 ${layout.width} ${height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">{borders()}</svg>}
         </div>
     )
 }

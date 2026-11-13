@@ -15,7 +15,7 @@ export const STRIP_LAYOUT = {
     printMarginMm: 4,
 }
 
-export type StripLayout = typeof STRIP_LAYOUT & { columns?: number; height?: number; photoCount?: number; websiteClassic?: boolean; websitePostcard?: boolean; websiteLandscape?: boolean }
+export type StripLayout = typeof STRIP_LAYOUT & { columns?: number; height?: number; photoCount?: number; photoWidth?: number; columnGap?: number; offsetX?: number; designScale?: number; websiteClassic?: boolean; websitePostcard?: boolean; websiteLandscape?: boolean }
 const pixelsPerCm = 300 / 2.54
 // Each half-sheet is 5.08 cm wide. Frames retain their specified physical size.
 export const WEBSITE_CLASSIC_LAYOUT: StripLayout = {
@@ -31,18 +31,53 @@ export const WEBSITE_POSTCARD_LAYOUT: StripLayout = {
 }
 // Three landscape photos in a 2×2 grid; the fourth cell is for designs.
 export const LANDSCAPE_LAYOUT: StripLayout = { ...STRIP_LAYOUT, width: 1800, height: 1200, columns: 2, photoCount: 3, photoHeight: 450 }
-export const WEBSITE_LANDSCAPE_LAYOUT: StripLayout = { ...LANDSCAPE_LAYOUT, websiteLandscape: true }
+// Exact photo openings in the supplied 4687×3281 navy-and-gold event artwork.
+// One scale preserves the artwork, gold borders, and event lettering on 4R.
+const artworkScale = 1200 / 3281
+const landscapeScale = artworkScale * 3281 / 1050
+export const WEBSITE_LANDSCAPE_LAYOUT: StripLayout = {
+    ...LANDSCAPE_LAYOUT, websiteLandscape: true,
+    border: 269 * artworkScale, gap: 93 * artworkScale,
+    photoWidth: 2095 * artworkScale, photoHeight: 1352 * artworkScale,
+    columnGap: 133 * artworkScale,
+    offsetX: (1800 - 4687 * artworkScale) / 2 + (182 - 269) * artworkScale,
+    designScale: landscapeScale,
+}
 export function photoCountForOptions(options?: Pick<StripOptions, 'layout'>) { return options?.layout === 'landscape' ? 3 : PHOTO_COUNT }
 export const FRAME_COLORS = { White: '#ffffff', Pink: '#fce7f3', Black: '#171717', Cream: '#fff4dc' }
 export type FrameColor = keyof typeof FRAME_COLORS
 export const CAPTION_LIMIT = 32
-export type StripOptions = { monochrome: boolean; frameColor: FrameColor; caption: string; date: string; design?: DesignItem[]; background?: string; backgroundImage?: string; layout?: 'classic' | 'postcard' | 'landscape' }
+export type PaperSize = '4R' | '3R'
+export type StripOptions = { monochrome: boolean; frameColor: FrameColor; caption: string; date: string; design?: DesignItem[]; background?: string; backgroundImage?: string; layout?: 'classic' | 'postcard' | 'landscape'; paperSize?: PaperSize; borderColor?: string; borderThickness?: number }
 
-// 4R at 300 DPI; only the three-photo layout uses landscape paper.
-export function paperForLayout(layout?: StripOptions['layout']) {
+export type PhotoFrame = { x: number; y: number; width: number; height: number }
+
+export function photoFrames(layout: StripLayout, count = layout.photoCount ?? PHOTO_COUNT): PhotoFrame[] {
+    const columns = layout.columns ?? 1
+    const columnGap = layout.columnGap ?? layout.gap
+    const width = layout.photoWidth ?? (layout.width - 2 * layout.border - (columns - 1) * columnGap) / columns
+    return Array.from({ length: count }, (_, index) => ({
+        x: (layout.offsetX ?? 0) + layout.border + (index % columns) * (width + columnGap),
+        y: layout.border + Math.floor(index / columns) * (layout.photoHeight + layout.gap),
+        width, height: layout.photoHeight,
+    }))
+}
+
+// Thickness is stored in millimetres. Fill only inside the fixed outer edges.
+export function photoBorderRects(frame: PhotoFrame, thickness = 0): PhotoFrame[] {
+    const t = Math.min(Number.isFinite(thickness) ? Math.max(0, thickness) * 300 / 25.4 : 0, frame.width / 2, frame.height / 2)
+    if (!t) return []
+    const { x, y, width, height } = frame
+    return [{ x, y, width, height: t }, { x, y: y + height - t, width, height: t },
+        { x, y: y + t, width: t, height: height - 2 * t }, { x: x + width - t, y: y + t, width: t, height: height - 2 * t }]
+}
+
+// Photo paper at 300 DPI; only the three-photo layout uses landscape paper.
+export function paperForLayout(layout?: StripOptions['layout'], paperSize: PaperSize = '4R') {
+    const [short, long] = paperSize === '3R' ? [3.5, 5] : [4, 6]
     return layout === 'landscape'
-        ? { width: 1800, height: 1200, widthInches: 6, heightInches: 4 }
-        : { width: 1200, height: 1800, widthInches: 4, heightInches: 6 }
+        ? { width: long * 300, height: short * 300, widthInches: long, heightInches: short }
+        : { width: short * 300, height: long * 300, widthInches: short, heightInches: long }
 }
 
 export function layoutForOptions(options?: StripOptions): StripLayout {
@@ -50,7 +85,16 @@ export function layoutForOptions(options?: StripOptions): StripLayout {
 }
 
 export function websiteLayoutForOptions(options?: StripOptions): StripLayout {
-    return options?.layout === 'landscape' ? WEBSITE_LANDSCAPE_LAYOUT : options?.layout === 'postcard' ? WEBSITE_POSTCARD_LAYOUT : layoutForOptions(options)
+    const layout = options?.layout === 'landscape' ? WEBSITE_LANDSCAPE_LAYOUT : options?.layout === 'postcard' ? WEBSITE_POSTCARD_LAYOUT : WEBSITE_CLASSIC_LAYOUT
+    if (options?.paperSize !== '3R') return layout
+    if (layout.websiteLandscape) return { ...LANDSCAPE_LAYOUT, websiteLandscape: true,
+        width: 1500, height: 1050, border: 50, gap: 25, photoWidth: 684, photoHeight: 444, columnGap: 32 }
+    const paper = paperForLayout(options.layout, options.paperSize)
+    const width = layout.websiteClassic ? paper.width / 2 : paper.width
+    const scale = Math.min(width / layout.width, paper.height / stripHeight(layout))
+    const resized = { ...layout, width, height: paper.height, border: layout.border * scale, gap: layout.gap * scale,
+        photoHeight: layout.photoHeight * scale, footerHeight: layout.footerHeight * scale, qrFooterHeight: layout.qrFooterHeight * scale }
+    return resized
 }
 
 export function stripHeight(layout: StripLayout, photoCount = PHOTO_COUNT) {
@@ -60,14 +104,18 @@ export function stripHeight(layout: StripLayout, photoCount = PHOTO_COUNT) {
 }
 
 export function designArea(layout: StripLayout, count = PHOTO_COUNT) {
+    if (layout.websiteClassic) {
+        return { left: layout.border, width: layout.width - 2 * layout.border,
+            top: layout.border, height: PHOTO_COUNT * layout.photoHeight + (PHOTO_COUNT - 1) * layout.gap }
+    }
     if (layout.websitePostcard) {
         // Decorations stay above the background-only bottom section.
         return { left: layout.border, width: layout.width - 2 * layout.border,
             top: layout.border, height: 2 * layout.photoHeight + layout.gap }
     }
     if (layout.photoCount === 3) {
-        const width = (layout.width - 2 * layout.border - layout.gap) / 2
-        return { left: layout.border + width + layout.gap, width, top: layout.border + layout.photoHeight + layout.gap, height: layout.photoHeight }
+        const frames = photoFrames(layout, 4)
+        return { left: frames[3].x, width: frames[3].width, top: frames[3].y, height: frames[3].height }
     }
     if (layout.columns === 2) {
         const top = layout.border + Math.ceil(count / 2) * (layout.photoHeight + layout.gap)
@@ -85,15 +133,17 @@ function loadPhoto(source: string): Promise<HTMLImageElement> {
 }
 
 export async function generateWebsiteClassicSheet(photos: string[], options: StripOptions, preview = false): Promise<string> {
-    const source = await generatePhotoStrip(photos, options, WEBSITE_CLASSIC_LAYOUT, true, preview)
+    const layout = websiteLayoutForOptions({ ...options, layout: 'classic' })
+    const paper = paperForLayout('classic', options.paperSize)
+    const source = await generatePhotoStrip(photos, options, layout, true, preview)
     const image = await loadPhoto(source)
     const canvas = document.createElement('canvas')
-    canvas.width = 1200; canvas.height = 1800
+    canvas.width = paper.width; canvas.height = paper.height
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Unable to prepare your print preview.')
-    // Copy at native dimensions: never scale the specified frames to fit.
+    // Both copies share the selected paper geometry, with no resampling.
     context.drawImage(image, 0, 0)
-    context.drawImage(image, 600, 0)
+    context.drawImage(image, layout.width, 0)
     return canvas.toDataURL('image/png')
 }
 
@@ -138,16 +188,30 @@ export async function generatePhotoStrip(
     context.imageSmoothingEnabled = true
     context.imageSmoothingQuality = 'high'
     if (backgroundImage) {
-        const scale = Math.max(canvas.width / backgroundImage.naturalWidth, canvas.height / backgroundImage.naturalHeight)
-        const width = canvas.width / scale, height = canvas.height / scale
-        context.drawImage(backgroundImage, (backgroundImage.naturalWidth - width) / 2, (backgroundImage.naturalHeight - height) / 2, width, height, 0, 0, canvas.width, canvas.height)
+        if (layout.websiteLandscape && layout.designScale) {
+            // Keep the entire source artwork visible, with its original proportions.
+            const scale = Math.min(canvas.width / backgroundImage.naturalWidth, canvas.height / backgroundImage.naturalHeight)
+            const width = backgroundImage.naturalWidth * scale, height = backgroundImage.naturalHeight * scale
+            context.drawImage(backgroundImage, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
+        } else {
+            const scale = Math.max(canvas.width / backgroundImage.naturalWidth, canvas.height / backgroundImage.naturalHeight)
+            const width = canvas.width / scale, height = canvas.height / scale
+            context.drawImage(backgroundImage, (backgroundImage.naturalWidth - width) / 2, (backgroundImage.naturalHeight - height) / 2, width, height, 0, 0, canvas.width, canvas.height)
+        }
     }
     const columns = layout.columns ?? 1
-    const photoWidth = (layout.width - 2 * layout.border - (columns - 1) * layout.gap) / columns
+    const frames = photoFrames(layout, images.length)
+    const photoWidth = frames[0].width
+    const finish = () => {
+        context.fillStyle = options.borderColor ?? '#ffffff'
+        for (const frame of frames) for (const edge of photoBorderRects(frame, options.borderThickness)) {
+            context.fillRect(edge.x, edge.y, edge.width, edge.height)
+        }
+        return canvas.toDataURL('image/png')
+    }
 
     images.forEach((image, index) => {
-        const y = layout.border + Math.floor(index / columns) * (layout.photoHeight + layout.gap)
-        const x = layout.border + (index % columns) * (photoWidth + layout.gap)
+        const { x, y } = frames[index]
         if (!image) {
             context.fillStyle = '#fdf2f8'; context.fillRect(x, y, photoWidth, layout.photoHeight)
             context.fillStyle = '#9d174d'; context.font = '40px Arial'; context.textAlign = 'center'
@@ -175,23 +239,30 @@ export async function generatePhotoStrip(
         const photoBottom = layout.border + PHOTO_COUNT * layout.photoHeight + (PHOTO_COUNT - 1) * layout.gap
         if (renderDesign && options.design?.length) await drawDesign(context, options.design, layout.width,
             layout.border, photoBottom - layout.border, layout.border, photoWidth)
-        // The following 4.32 × 2.56 cm section contains only the background.
-        return canvas.toDataURL('image/png')
+        // Leave the bottom section background-only.
+        return finish()
     }
     if (layout.websitePostcard) {
         const area = designArea(layout)
         if (renderDesign && options.design?.length) await drawDesign(context, options.design, layout.width,
             area.top, area.height, area.left, area.width)
-        return canvas.toDataURL('image/png')
+        return finish()
     }
     if (layout.photoCount === 3) {
         const area = designArea(layout)
-        if (renderDesign && options.design?.length) await drawDesign(context, options.design, layout.width, area.top, area.height, area.left, area.width)
-        if (layout.websiteLandscape) return canvas.toDataURL('image/png')
+        if (renderDesign && options.design?.length) {
+            const scale = layout.designScale ?? 1
+            context.save()
+            try {
+                context.scale(scale, scale)
+                await drawDesign(context, options.design, layout.width / scale, area.top / scale, area.height / scale, area.left / scale, area.width / scale)
+            } finally { context.restore() }
+        }
+        if (layout.websiteLandscape) return finish()
         drawFleuraQr(context, 1600, 1000, 180)
         context.textAlign = 'center'; context.fillStyle = '#342b31'; context.font = '28px Arial, sans-serif'
         context.fillText(FLEURA_QR_CAPTION, 900, 1180, 1680)
-        return canvas.toDataURL('image/png')
+        return finish()
     }
     if (columns === 2) {
         const area = designArea(layout)
@@ -203,7 +274,7 @@ export async function generatePhotoStrip(
         drawFleuraQr(context, 900, footerTop + 12, 204)
         context.font = '32px Arial, sans-serif'
         context.fillText(FLEURA_QR_CAPTION, canvas.width / 2, canvas.height - layout.border - 12, canvas.width - 2 * layout.border)
-        return canvas.toDataURL('image/png')
+        return finish()
     }
     const designTop = canvas.height - layout.border - layout.footerHeight - layout.qrFooterHeight
     if (renderDesign && options.design?.length) await drawDesign(context, options.design, layout.width, layout.border, designTop - layout.border)
@@ -221,7 +292,7 @@ export async function generatePhotoStrip(
     if (caption) context.fillText(caption, canvas.width / 2, footerTop + STRIP_LAYOUT.footerHeight * 0.23, photoWidth)
     context.font = `${layout.width * 0.026}px Arial, sans-serif`
     if (options.date) context.fillText(options.date, canvas.width / 2, footerTop + STRIP_LAYOUT.footerHeight * 0.42, photoWidth)
-    return canvas.toDataURL('image/png')
+    return finish()
 }
 
 

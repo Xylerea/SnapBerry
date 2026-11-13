@@ -1,17 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { ArrowLeft, Check } from 'lucide-react'
 import PhotoStrip from './PhotoStrip'
+import PaperSizeSelect from './PaperSizeSelect'
+import DeleteTemplateDialog from './DeleteTemplateDialog'
+import type { PaperSize } from '../lib/photoStrip'
 import { deleteTemplate, listTemplates, type StripTemplate } from '../lib/stripTemplates'
 
-type Props = { selectedId?: string | null; selectedLayout: StripTemplate['settings']['layout']; onSelect?: (template: StripTemplate) => void; onBack: () => void; onCustomize?: () => void; management?: boolean }
+type Props = { selectedId?: string | null; selectedLayout: StripTemplate['settings']['layout']; paperSize?: PaperSize; onPaperSizeChange?: (size: PaperSize) => void; onSelect?: (template: StripTemplate) => void; onBack: () => void; onCustomize?: () => void; management?: boolean; onDeleted?: (ids: string[]) => void }
 
-export default function CustomizedLayouts({ selectedId, selectedLayout, onSelect, onBack, onCustomize, management = false }: Props) {
+export default function CustomizedLayouts({ selectedId, selectedLayout, paperSize = '4R', onPaperSizeChange, onSelect, onBack, onCustomize, management = false, onDeleted }: Props) {
     const [templates, setTemplates] = useState<StripTemplate[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [selectedIds, setSelectedIds] = useState<string[]>([])
     const [busy, setBusy] = useState(false)
+    const [pendingIds, setPendingIds] = useState<string[] | null>(null)
     const deleting = useRef(false)
+    const press = useRef<{ timer: number; x: number; y: number } | null>(null)
+    const suppressClick = useRef(false)
+    function cancelPress() {
+        if (press.current) window.clearTimeout(press.current.timer)
+        press.current = null
+    }
+    useEffect(() => () => cancelPress(), [])
     useEffect(() => {
         let cancelled = false
         void listTemplates().then(saved => {
@@ -31,16 +42,23 @@ export default function CustomizedLayouts({ selectedId, selectedLayout, onSelect
     const savedDesigns = templates.filter(template => (template.settings.layout ?? 'classic') === layout)
     const designs = management ? savedDesigns : [defaultDesign, ...savedDesigns]
 
+    function requestDelete(requested: string[]) {
+        cancelPress()
+        const ids = requested.filter(id => savedDesigns.some(template => template.id === id))
+        if (management && !deleting.current && ids.length) setPendingIds(ids)
+    }
+
     async function removeSelected() {
-        const ids = selectedIds.filter(id => savedDesigns.some(template => template.id === id))
+        const ids = (pendingIds ?? []).filter(id => savedDesigns.some(template => template.id === id))
         if (!management || deleting.current || !ids.length) return
-        if (!window.confirm(`Permanently delete ${ids.length} selected design${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
         deleting.current = true; setBusy(true); setError('')
         try {
             const results = await Promise.allSettled(ids.map(id => deleteTemplate(id)))
             const removed = ids.filter((_, index) => results[index].status === 'fulfilled')
             setTemplates(current => current.filter(template => !removed.includes(template.id)))
             setSelectedIds(current => current.filter(id => !removed.includes(id)))
+            setPendingIds(null)
+            if (removed.length) onDeleted?.(removed)
             const failed = ids.length - removed.length
             if (failed) setError(`${failed} design${failed === 1 ? '' : 's'} could not be deleted. ${removed.length} deleted. Please retry the remaining selection.`)
         } finally { deleting.current = false; setBusy(false) }
@@ -49,30 +67,66 @@ export default function CustomizedLayouts({ selectedId, selectedLayout, onSelect
     return <main className={`homepage-layout-choice custom-designs${management ? ' design-management' : ''}`} aria-labelledby="custom-designs-title">
         <div className="custom-designs-heading">
             <h2 id="custom-designs-title" className="font-bold text-pink-600">{management ? 'Edit Designs' : 'Choose Your Design'}</h2>
-            {!management && <button type="button" onClick={onCustomize} className="custom-designs-open rounded-full shadow-lg">Customize Design</button>}
+            {!management && <div className="custom-design-actions">
+                <button type="button" onClick={onCustomize} className="custom-designs-open rounded-full shadow-lg">Customize Design</button>
+                {onPaperSizeChange && <PaperSizeSelect value={paperSize} onChange={onPaperSizeChange} />}
+            </div>}
         </div>
         {loading && <p role="status" className="text-center text-gray-500">Loading saved designs…</p>}
         {error && <p role="alert" className="text-center text-red-600">{error}</p>}
         {management && !loading && !error && !savedDesigns.length && <p className="text-center text-gray-500">No customized designs for this layout yet.</p>}
         {management && <div className="design-management-actions">
-            <button type="button" className="layout-details-continue" disabled={busy || !selectedIds.length} onClick={() => void removeSelected()}>Delete Selected ({selectedIds.length})</button>
+            <button type="button" className="layout-details-continue" disabled={busy || !selectedIds.length} onClick={() => requestDelete(selectedIds)}>Delete Selected ({selectedIds.length})</button>
             <button type="button" className="layout-details-save" disabled={busy} onClick={onBack}>Cancel</button>
         </div>}
+        {management && savedDesigns.length > 0 && <p className="text-center text-sm text-gray-500">Touch and hold or right-click a template to delete it. With a keyboard, focus a template and press Delete.</p>}
         <div className="custom-design-grid">
             {designs.map(template => <div key={template.id} className="custom-design-item">
                 <button type="button" className="custom-design-option" disabled={busy}
                 aria-label={`Select ${template.name}`} aria-pressed={management ? selectedIds.includes(template.id) : selectedId === template.id}
-                onClick={() => management
-                    ? setSelectedIds(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])
-                    : onSelect?.(template)}>
+                {...(management ? {
+                    onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
+                        event.preventDefault()
+                        suppressClick.current = true
+                        requestDelete([template.id])
+                    },
+                    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+                        cancelPress()
+                        suppressClick.current = false
+                        if (!event.isPrimary || event.button !== 0 || event.pointerType === 'mouse') return
+                        press.current = { x: event.clientX, y: event.clientY, timer: window.setTimeout(() => {
+                            suppressClick.current = true
+                            requestDelete([template.id])
+                        }, 600) }
+                    },
+                    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+                        if (press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > 10) cancelPress()
+                    },
+                    onPointerUp: cancelPress,
+                    onPointerCancel: cancelPress,
+                    onPointerLeave: cancelPress,
+                    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+                        if (event.key === 'Delete' || (event.shiftKey && event.key === 'F10')) {
+                            event.preventDefault()
+                            requestDelete([template.id])
+                        }
+                    },
+                } : {})}
+                onClick={event => {
+                    if (suppressClick.current && event.detail !== 0) { event.preventDefault(); suppressClick.current = false; return }
+                    if (pendingIds) return
+                    if (management) setSelectedIds(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])
+                    else onSelect?.(template)
+                }}>
                 <div className={`custom-design-preview ${template.settings.layout === 'landscape' ? 'is-landscape' : ''}`} aria-hidden="true">
                     <PhotoStrip photos={[]} generatedImage={null} live paired={!template.settings.layout || template.settings.layout === 'classic'}
-                        monochrome={false} caption="" date="" {...template.settings} />
+                        monochrome={false} caption="" date="" {...template.settings} paperSize={management ? template.settings.paperSize : paperSize} />
                 </div>
                 {management && selectedIds.includes(template.id) && <span className="design-selected-check"><Check size={18} aria-hidden="true" /></span>}
                 </button>
             </div>)}
         </div>
         <button type="button" className="layout-choice-back" disabled={busy} onClick={onBack}><ArrowLeft size={18} /> {management ? 'Done' : 'Back'}</button>
+        {pendingIds && <DeleteTemplateDialog count={pendingIds.length} busy={busy} onCancel={() => setPendingIds(null)} onDelete={() => void removeSelected()} />}
     </main>
 }

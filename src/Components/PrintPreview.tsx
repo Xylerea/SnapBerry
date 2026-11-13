@@ -7,9 +7,9 @@ import PrinterAnimation from './PrinterAnimation'
 import { isAndroidApp, SnapBerryNative } from '../lib/native'
 import { useBluetoothPrinter } from '../hooks/useBluetoothPrinter'
 
-type Props = { layout?: StripOptions['layout']; image: string; onBack: () => void }
+type Props = { layout?: StripOptions['layout']; paperSize?: StripOptions['paperSize']; image: string; onBack: () => void }
 
-export default function PrintPreview({ layout, image, onBack }: Props) {
+export default function PrintPreview({ layout, paperSize = '4R', image, onBack }: Props) {
     const dialogRef = useRef<HTMLDialogElement>(null)
     const printImageRef = useRef<HTMLImageElement>(null)
     const printingRef = useRef(false)
@@ -22,7 +22,7 @@ export default function PrintPreview({ layout, image, onBack }: Props) {
     const classicCopies = !isAndroidApp() && (!layout || layout === 'classic')
     const outputImage = image
     const postcard = layout === 'postcard' || layout === 'landscape'
-    const paper = paperForLayout(layout)
+    const paper = paperForLayout(layout, paperSize)
     const paperWidth = 57
     const dimensions = printDimensions(paperWidth, aspectRatio)
     const showSetup = !printing && (animationAttempt === 0 || printer.failed || Boolean(error))
@@ -67,7 +67,8 @@ export default function PrintPreview({ layout, image, onBack }: Props) {
         <dialog ref={dialogRef} className="completed-strip-modal" aria-labelledby="print-title"
             onCancel={event => { event.preventDefault(); onBack() }}>
             <h2 id="print-title" className="text-xl font-bold text-pink-600">{printing || animationAttempt > 0 ? 'Printing…' : 'Print your strip'}</h2>
-            {classicCopies && outputImage && <img src={outputImage} alt="4R portrait print preview: two identical four-photo strips" className="mx-auto block w-full max-w-[300px] bg-white shadow-md" style={{ aspectRatio: `${paper.width} / ${paper.height}`, objectFit: 'contain' }} />}
+            {!isAndroidApp() && <p className="text-center text-sm text-gray-500">Use {paperSize} paper ({paper.widthInches} × {paper.heightInches} in), 100% / Actual size, and no margins in the print dialog.</p>}
+            {classicCopies && outputImage && <img src={outputImage} alt={`${paperSize} portrait print preview: two identical four-photo strips`} className="mx-auto block w-full max-w-[300px] bg-white shadow-md" style={{ aspectRatio: `${paper.width} / ${paper.height}`, objectFit: 'contain' }} />}
             {classicCopies && !outputImage && !error && <p role="status" className="text-center text-sm text-gray-600">Preparing print preview…</p>}
             {!classicCopies && animationAttempt > 0 && <PrinterAnimation key={animationAttempt} image={image} />}
             {printing && <p role="status" aria-live="polite" className="text-center text-sm text-gray-600">

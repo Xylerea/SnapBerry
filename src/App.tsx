@@ -28,7 +28,7 @@ function App() {
   const [showLayoutDetails, setShowLayoutDetails] = useState(false)
   const [showCustomDesigns, setShowCustomDesigns] = useState(false)
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null)
-  const [layoutOptions, setLayoutOptions] = useState<StripOptions>({ monochrome: false, frameColor: 'White', caption: '', date: '', layout: 'classic' })
+  const [layoutOptions, setLayoutOptions] = useState<StripOptions>({ monochrome: false, frameColor: 'White', caption: '', date: '', layout: 'classic', paperSize: '4R' })
   const website = !isAndroidApp()
   useAndroidBack(() => {
     const event = new Event('snapberry:back', { cancelable: true })
@@ -52,23 +52,28 @@ function App() {
       </header>
 
       {website && showCustomDesigns ? <CustomizedLayouts selectedId={selectedDesignId} selectedLayout={selectedLayout}
+        paperSize={layoutOptions.paperSize} onPaperSizeChange={paperSize => setLayoutOptions(current => ({ ...current, paperSize }))}
         onBack={() => { setShowCustomDesigns(false); setShowLayoutChoice(true) }}
         onCustomize={() => {
-          setLayoutOptions({ monochrome: false, frameColor: 'White', caption: '', date: '', layout: selectedLayout ?? 'classic' })
           setShowCustomDesigns(false); setShowLayoutDetails(true)
         }}
         onSelect={template => {
           setSelectedDesignId(template.id)
           setSelectedLayout(template.settings.layout ?? 'classic')
-          setLayoutOptions({ monochrome: false, caption: '', date: '', ...template.settings })
+          setLayoutOptions(current => ({ monochrome: false, caption: '', date: '', ...template.settings, paperSize: current.paperSize ?? '4R' }))
           setShowCustomDesigns(false); setShowLayoutDetails(false); setShowLayoutChoice(false); setShowCamera(true)
         }} />
-      : website && showLayoutDetails ? <LayoutDetails options={layoutOptions} onChange={setLayoutOptions}
+      : website && showLayoutDetails ? <LayoutDetails options={layoutOptions} onChange={setLayoutOptions} selectedId={selectedDesignId}
+        onDeleted={ids => {
+          if (!selectedDesignId || !ids.includes(selectedDesignId)) return
+          setSelectedDesignId(`default-${layoutOptions.layout ?? 'classic'}`)
+          setLayoutOptions(current => ({ ...current, frameColor: 'White', background: '#ffffff', backgroundImage: undefined, design: [], borderColor: undefined, borderThickness: undefined }))
+        }}
         onSaved={id => { setSelectedDesignId(id); setShowLayoutDetails(false); setShowCustomDesigns(true) }}
         onBack={() => { setShowLayoutDetails(false); setShowCustomDesigns(true) }}
         onContinue={() => { setShowLayoutDetails(false); setShowLayoutChoice(false); setShowCamera(true) }} />
       : website && showLayoutChoice ? <main className="homepage-layout-choice" aria-labelledby="layout-choice-title">
-        <h2 id="layout-choice-title" className="text-center text-3xl font-bold text-pink-600">Choose Your Photo Layout</h2>
+        <h2 id="layout-choice-title" className="text-center text-3xl font-bold text-pink-600">Photo Layout</h2>
         <div className="layout-choice-grid">
           {([
             { layout: 'classic', label: 'Photo Strip', captures: 4 },
@@ -77,7 +82,7 @@ function App() {
           ] as const).map(({ layout, label, captures }) => <button key={layout} type="button" className="layout-choice-card group"
             onClick={() => {
               setSelectedLayout(layout)
-              setLayoutOptions(current => current.layout === layout ? current : { monochrome: false, frameColor: 'White', caption: '', date: '', layout })
+              setLayoutOptions(current => current.layout === layout ? current : { monochrome: false, frameColor: 'White', caption: '', date: '', layout, paperSize: current.paperSize ?? '4R' })
               setShowLayoutChoice(false); setShowLayoutDetails(false); setShowCustomDesigns(true)
             }}>
             <div className="layout-choice-preview" aria-hidden="true">

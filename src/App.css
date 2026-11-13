@@ -181,16 +181,42 @@
   gap: 12px 20px;
 }
 .homepage-web .custom-designs-heading h2 { min-width: 0; grid-column: 2; text-align: center; }
-.homepage-web .custom-designs-heading .custom-designs-open {
+.homepage-web .custom-designs-heading .custom-design-actions {
   grid-column: 3;
   justify-self: end;
-  margin: 0 0 0 auto;
+}
+.homepage-web .custom-design-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.homepage-web .custom-design-actions .custom-designs-open {
+  margin: 0;
+  padding-inline: 16px;
   background: #db2777;
   color: white;
   font-size: 14px;
+  white-space: nowrap;
 }
-@media (max-width: 767px) {
-  .homepage-web .custom-designs-heading .custom-designs-open { grid-row: 1; grid-column: 1 / -1; }
+.paper-size-control { display: inline-flex; flex-shrink: 0; }
+.paper-size-control select {
+  min-height: 44px;
+  min-width: 76px;
+  padding: 8px 12px;
+  border: 1px solid #fbcfe8;
+  border-radius: 999px;
+  background: white;
+  color: #be185d;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.paper-size-control select:focus-visible { outline: 3px solid #f472b6; outline-offset: 3px; }
+.paper-size-control select:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 1023px) {
+  .homepage-web .custom-designs-heading .custom-design-actions { grid-row: 1; grid-column: 1 / -1; }
   .homepage-web .custom-designs-heading h2 { grid-row: 2; grid-column: 1 / -1; }
 }
 
@@ -216,6 +242,21 @@
 }
 .homepage-web .design-management-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 16px; }
 .homepage-web .design-management-actions button:disabled { opacity: 0.5; }
+.homepage-web .design-management .custom-design-option { -webkit-touch-callout: none; user-select: none; }
+.delete-template-dialog {
+  width: min(420px, calc(100vw - 32px));
+  margin: auto;
+  padding: 24px;
+  border: 1px solid #fbcfe8;
+  border-radius: 20px;
+  background: #fff5f8;
+  color: #4b5563;
+  box-shadow: 0 20px 60px #342b3140;
+}
+.delete-template-dialog[open] { display: grid; gap: 16px; }
+.delete-template-dialog::backdrop { background: #342b3180; }
+.delete-template-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.delete-template-actions button { min-height: 44px; }
 .homepage-web .custom-design-option {
   position: relative;
   width: 100%;
@@ -343,12 +384,6 @@
 
 .homepage-web .hero-sample-three .hero-sample-grid {
   height: 90%;
-}
-
-.homepage-web .hero-sample-three .hero-sample-grid::after {
-  content: '';
-  grid-column: 2;
-  grid-row: 2;
 }
 
 .homepage-web .hero-sample-photo {

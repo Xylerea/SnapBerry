@@ -4,6 +4,7 @@ import { isAndroidApp } from '../lib/native'
 import { loadLayoutBackground } from '../lib/layoutBackground'
 import { DESIGN_FONTS, constrainDesign, type DesignItem } from '../lib/stripDesign'
 import DragDesignCanvas from './DragDesignCanvas'
+import BorderControls from './BorderControls'
 import { listTemplates, saveTemplate, deleteTemplate, type StripTemplate } from '../lib/stripTemplates'
 
 type Props = { options: StripOptions; photos?: string[]; onChange: (options: StripOptions) => void; onDone: () => void }
@@ -28,9 +29,12 @@ export default function StripDesigner({ options, photos, onChange, onDone }: Pro
     const layout = isAndroidApp() ? layoutForOptions(options) : websiteLayoutForOptions(options)
     const height = stripHeight(layout)
     const area = designArea(layout)
-    const editableHeight = area.height
-    const editableWidth = area.width
+    const editableHeight = area.height / (layout.designScale ?? 1)
+    const editableWidth = area.width / (layout.designScale ?? 1)
     const layoutChoice = options.layout
+    const paperSize = options.paperSize
+    const borderColor = options.borderColor
+    const borderThickness = options.borderThickness
     const hasDesign = items.length > 0
     const background = options.background
     const frameColor = options.frameColor
@@ -70,7 +74,7 @@ export default function StripDesigner({ options, photos, onChange, onDone }: Pro
     function saveCurrentTemplate() {
         const name = templateName.trim()
         if (!name || !backgroundImage || uploading || templateLock.current) return
-        const settings = { layout: options.layout ?? 'classic', background: options.background, backgroundImage, frameColor, design: options.design } as const
+        const settings = { layout: options.layout ?? 'classic', paperSize, background: options.background, backgroundImage, frameColor, design: options.design, borderColor, borderThickness } as const
         void changeTemplates(() => saveTemplate({ id: crypto.randomUUID(), name, settings }), 'Template saved on this device.')
     }
     useEffect(() => {
@@ -82,11 +86,11 @@ export default function StripDesigner({ options, photos, onChange, onDone }: Pro
         context.fillStyle = '#9d174d'; context.font = '48px Arial'; context.textAlign = 'center'; context.fillText('Your photo here', 540, 420)
         const timer = window.setTimeout(() => {
             const captured = JSON.parse(photosKey) as string[]
-            const previewOptions: StripOptions = { monochrome: false, caption: '', date: '', background, backgroundImage, frameColor, layout: layoutChoice, design: hasDesign ? [{ id: 'base', kind: 'text', value: '', font: 'Simple', size: 64, x: 50, y: 80 }] : [] }
+            const previewOptions: StripOptions = { monochrome: false, caption: '', date: '', background, backgroundImage, frameColor, layout: layoutChoice, paperSize, borderColor, borderThickness, design: hasDesign ? [{ id: 'base', kind: 'text', value: '', font: 'Simple', size: 64, x: 50, y: 80 }] : [] }
             void generatePhotoStrip(Array.from({ length: photoCountForOptions({ layout: layoutChoice }) }, (_, index) => captured[index] ?? canvas.toDataURL('image/png')), previewOptions, isAndroidApp() ? undefined : websiteLayoutForOptions(previewOptions), false).then(image => { if (!cancelled) { setPreview(image); setError('') } }).catch(() => { if (!cancelled) setError('Unable to preview your design. Try removing the last item.') })
         }, 120)
         return () => { cancelled = true; window.clearTimeout(timer) }
-    }, [hasDesign, background, backgroundImage, frameColor, layoutChoice, photosKey])
+    }, [hasDesign, background, backgroundImage, frameColor, layoutChoice, paperSize, borderColor, borderThickness, photosKey])
     function add(kind: DesignItem['kind'], value: string, aspectRatio?: number) {
         if (items.length >= 6) { setError('You can add up to 6 items.'); return }
         const id = crypto.randomUUID()
@@ -123,7 +127,7 @@ export default function StripDesigner({ options, photos, onChange, onDone }: Pro
 
         <div className="relative mx-auto w-full max-w-[300px] bg-white shadow-md" style={{ aspectRatio: `${layout.width} / ${height}` }}>
             {preview && <img src={preview} alt="Editable photo strip" className="block h-full w-full" />}
-            <div className="absolute" style={{ left: `${area.left / layout.width * 100}%`, width: `${editableWidth / layout.width * 100}%`, top: `${area.top / height * 100}%`, height: `${editableHeight / height * 100}%` }}>
+            <div className="absolute" style={{ left: `${area.left / layout.width * 100}%`, width: `${area.width / layout.width * 100}%`, top: `${area.top / height * 100}%`, height: `${area.height / height * 100}%` }}>
                 <DragDesignCanvas width={editableWidth} height={editableHeight} items={items} selected={selected} onSelect={setSelected} onEditText={id => { setSelected(id); setEditRequest(value => value + 1) }} onChange={design => onChange({ ...options, design })} />
             </div>
         </div>
@@ -134,6 +138,7 @@ export default function StripDesigner({ options, photos, onChange, onDone }: Pro
                 {items.map((item, index) => <button key={item.id} type="button" aria-pressed={selected === item.id} onClick={() => setSelected(item.id)} className={`${button} w-full truncate ${selected === item.id ? 'bg-pink-100' : ''}`}>{item.kind === 'image' ? `Image ${index + 1}` : item.value || 'Empty text'}</button>)}
             </div>
         <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-pink-700">Background<input type="color" value={options.background ?? '#ffffff'} onChange={event => onChange({ ...options, background: event.target.value })} className="h-11 w-14" /></label>
+        <BorderControls options={options} onChange={onChange} disabled={uploading} />
         <label className={`${button} block text-center`}>{uploading ? 'Loading?' : backgroundImage ? 'Replace Background' : 'Upload Background'}<input type="file" accept="image/png,image/jpeg" disabled={uploading} className="mt-2 w-full text-xs" onChange={event => { void upload(event.target.files?.[0], true); event.target.value = '' }} /></label>
         {backgroundImage && <button type="button" disabled={uploading} className={button} onClick={() => onChange({ ...options, backgroundImage: undefined })}>Remove Background</button>}
         <div className="space-y-2">
