@@ -64,7 +64,7 @@ function booth(permissionDenied = false, props = {}, android = false) {
     function render() { cursor = 0; tree = Component({ onClose() {}, ...props }); const callbacks = pending; pending = []; callbacks.forEach(fn => fn()) }
     function nodes(node) { return !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)] }
     const all = () => nodes(tree)
-    const button = label => all().find(node => node.type === 'button' && ([node.props.children].flat().some(child => typeof child === 'string' && child.trim() === label) || (label === 'Start' && /^Start \d-photo capture$/.test(node.props['aria-label'] || ''))))
+    const button = label => all().find(node => node.type === 'button' && ([node.props.children].flat().some(child => typeof child === 'string' && child.trim() === label) || (['Start', 'Start Capture'].includes(label) && /^Start \d-photo capture$/.test(node.props['aria-label'] || ''))))
     const tick = delay => { const item = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(item, `Expected timer ${delay}`); timers.delete(item[0]); item[1].fn(); render() }
     return { render, all, button, tick, timers, video, exports, draws,
         rotate(landscape, event = 'screen') { viewport.matches = landscape; (event === 'screen' ? orientationListeners.get('change') : event === 'media' ? viewportListeners.get('change') : listeners.get(event))(); render() },
@@ -931,7 +931,7 @@ test('design can be edited before capture, survives capture and print/back', asy
     app.all().find(node => node.type === 'StripDesigner').props.onDone(); app.render()
     app.all().find(node => node.type === 'video').props.onLoadedData(); app.render()
     app.button('Start Capture').props.onClick(); app.render()
-    assert.equal(app.button('Design Strip').props.disabled, true)
+    assert.equal(app.button('Design Strip'), undefined)
     for (let i = 0; i < 12; i++) app.tick(1000)
     app.tick(0); await flush(); app.render()
     let modal = app.all().find(node => node.type === 'CompletedModal')

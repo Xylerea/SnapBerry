@@ -470,6 +470,43 @@
 .exit-session-confirm:hover { background: #fce7f3; }
 .exit-session-actions button:focus-visible { outline: 3px solid #831843; outline-offset: 4px; }
 
+/* The capture surface and the video share the viewport's exact bounds. */
+@media screen {
+    .camera-booth.landscape-capture {
+        position: fixed; inset: 0; z-index: 20; width: 100%; height: 100dvh;
+        min-height: 0; padding: 0; overflow: hidden; background: #171218;
+    }
+    .landscape-capture header { justify-content: flex-end; }
+    .landscape-capture header > div { display: none; }
+    .camera-booth.landscape-capture .landscape-capture-stage .landscape-live-video {
+        position: absolute; inset: 0; width: 100%; height: 100%; max-height: none;
+        margin: 0; aspect-ratio: auto !important; object-fit: cover; object-position: center;
+        transform: scaleX(-1);
+    }
+    .camera-booth.landscape-capture .landscape-capture-bottom {
+        inset: auto 0 0; justify-content: center; flex-direction: column;
+        padding: 24px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        background: linear-gradient(transparent, #0009);
+    }
+    .fullscreen-cancel, .fullscreen-native-options button {
+        min-height: 44px; padding: 8px 16px; border: 1px solid #f9a8d4;
+        border-radius: 999px; background: #831843cc; color: white; font-weight: 600;
+    }
+    .fullscreen-native-options {
+        position: absolute; z-index: 2; top: max(12px, env(safe-area-inset-top));
+        left: max(12px, env(safe-area-inset-left)); display: flex; flex-wrap: wrap;
+        gap: 6px; max-width: calc(100% - 80px);
+    }
+    .fullscreen-native-options button[aria-pressed='true'] { background: #db2777; }
+}
+@media screen and (orientation: portrait) {
+    .camera-booth[data-orientation='portrait'] .landscape-photo-slots {
+        inset: auto max(16px, env(safe-area-inset-right)) calc(max(16px, env(safe-area-inset-bottom)) + 100px) max(16px, env(safe-area-inset-left));
+        grid-template-columns: repeat(var(--photo-slot-count), minmax(0, 1fr));
+        gap: 8px; width: min(calc(100% - 32px), 360px); margin-inline: auto;
+    }
+}
+
 .strip-print-only { display: none; }
 
 .printer-animation { margin: 0 auto; width: min(220px, 100%); }

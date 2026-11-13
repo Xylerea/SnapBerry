@@ -60,7 +60,7 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
     const complete = photos.length === photoCount
     // Every website layout shares the Landscape Postcard camera stage.
     // Only the shot count and final print composition depend on the layout.
-    const fullscreenCapture = !isAndroidApp()
+    const fullscreenCapture = true
     // The rendered result is tied to its source/settings, preventing stale downloads.
     const [renderedSettings, setRenderedSettings] = useState('')
     const settingsKey = JSON.stringify(options)
@@ -397,12 +397,17 @@ export default function CameraBooth({ onClose, onExitToLayouts, initialLayout, i
                         <span aria-label={'Capturing in ' + countdown + ' seconds'}>{countdown}</span>
                     </div>}
                     {photos.length > 0 && <div key={cameraAttempt + ':' + photos.length} aria-hidden="true" className="camera-shutter pointer-events-none absolute inset-0 bg-white" />}
-                    {countdown === null && photos.length === 0 && <div className="landscape-capture-bottom">
-                        <button type="button" onClick={startSession} disabled={!cameraReady || !!error} aria-label={`Start ${photoCount}-photo capture`}
+                    {isAndroidApp() && countdown === null && photos.length === 0 && <div className="fullscreen-native-options">
+                        {(['classic', 'postcard'] as StripOptions['layout'][]).map(layout => <button key={layout} type="button" aria-pressed={(options.layout ?? 'classic') === layout}
+                            onClick={() => setOptions({ ...options, layout })}>{layout === 'classic' ? 'Classic Vertical' : '2×2 Postcard'}</button>)}
+                        <button type="button" onClick={() => setShowDesigner(true)}>Design Strip</button>
+                    </div>}
+                    <div className="landscape-capture-bottom">
+                        {countdown === null && photos.length === 0 ? <button type="button" onClick={startSession} disabled={!cameraReady || !!error} aria-label={`Start ${photoCount}-photo capture`}
                             className="landscape-start rounded-full bg-pink-600 font-semibold text-white transition hover:bg-pink-700 disabled:opacity-50">
                             <Camera size={28} aria-hidden="true" /><span className="sr-only">Start</span>
-                        </button>
-                    </div>}
+                        </button> : isAndroidApp() && countdown !== null ? <button type="button" onClick={cancelCapture} className="fullscreen-cancel">Cancel Capture</button> : null}
+                    </div>
                     {photoSlots}
                 </div> : <div className={!isAndroidApp() && !complete ? `mx-auto grid max-w-5xl items-start gap-4 ${options.layout !== 'classic' && options.layout ? 'md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}` : 'mx-auto max-w-2xl'}>
                     <div className={complete ? 'hidden' : 'camera-session-panel md:sticky md:top-6'}>
